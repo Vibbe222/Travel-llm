@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>旅游规划机器人</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script><!-- 把 Markdown 文本转成 HTML -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script><!-- 把生成的 HTML 做安全清洗 -->
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: rgba(255, 252, 246, 0.9);
+      --card: #ffffff;
+      --line: #d8cdbb;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #12664f;
+      --user: #dbeafe;
+      --debug: #8a5a00;
+      --code-bg: #f8fafc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.72), transparent 28%),
+        radial-gradient(circle at right, rgba(18, 102, 79, 0.1), transparent 30%),
+        linear-gradient(135deg, #efe5d0, #f8f4ec 50%, #e7f2ee);
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }
+
+    .hero, .panel {
+      border: 1px solid rgba(216, 205, 187, 0.8);
+      border-radius: 24px;
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 45px rgba(54, 44, 24, 0.08);
+    }
+
+    .hero {
+      margin-bottom: 20px;
+      padding: 24px 28px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.2;
+    }
+
+    .hero p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr);
+      gap: 20px;
+    }
+
+    .panel {
+      min-height: 72vh;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(216, 205, 187, 0.8);
+    }
+
+    .panel-title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: calc(72vh - 170px);
+      padding: 20px;
+      overflow: auto;
+    }
+    .message {
+      max-width: 88%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.6;
+      box-shadow: 0 10px 24px rgba(54, 44, 24, 0.06);
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--user);
+      border: 1px solid rgba(29, 78, 216, 0.14);
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: var(--card);
+      border: 1px solid rgba(216, 205, 187, 0.8);
+    }
+
+    .message-label {
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.75;
+    }
+
+    .message-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .message-markdown h1,
+    .message-markdown h2,
+    .message-markdown h3,
+    .message-markdown h4,
+    .message-markdown h5,
+    .message-markdown h6 {
+      margin: 0.8em 0 0.4em;
+      line-height: 1.35;
+    }
+
+    .message-markdown h1:first-child,
+    .message-markdown h2:first-child,
+    .message-markdown h3:first-child {
+      margin-top: 0;
+    }
+
+    .message-markdown p {
+      margin: 0.55em 0;
+    }
+
+    .message-markdown ul,
+    .message-markdown ol {
+      margin: 0.55em 0;
+      padding-left: 1.4em;
+    }
+
+    .message-markdown li {
+      margin: 0.25em 0;
+    }
+
+    .message-markdown hr {
+      border: none;
+      border-top: 1px solid #d6d3d1;
+      margin: 1em 0;
+    }
+
+    .message-markdown code {
+      padding: 0.15em 0.35em;
+      border-radius: 6px;
+      background: var(--code-bg);
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 0.92em;
+    }
+
+    .message-markdown pre {
+      margin: 0.8em 0;
+      padding: 12px 14px;
+      overflow: auto;
+      border-radius: 12px;
+      background: var(--code-bg);
+      border: 1px solid #e5e7eb;
+    }
+
+    .message-markdown pre code {
+      padding: 0;
+      background: transparent;
+    }
+
+    .message-markdown blockquote {
+      margin: 0.8em 0;
+      padding: 0.1em 0 0.1em 1em;
+      border-left: 3px solid #d6d3d1;
+      color: #4b5563;
+    }
+
+    .message-markdown strong {
+      font-weight: 700;
+    }
+
+    .composer {
+      padding: 18px 20px 20px;
+      border-top: 1px solid rgba(216, 205, 187, 0.8);
+      background: rgba(255, 252, 246, 0.96);
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      outline: none;
+      font: inherit;
+      background: #fffdfa;
+    }
+
+    .composer textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(18, 102, 79, 0.08);
+    }
+
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: inherit;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(135deg, #12664f, #0f4d3d);
+      cursor: pointer;
+    }
+
+    .button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .debug-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: calc(72vh - 80px);
+      padding: 20px;
+      overflow: auto;
+    }
+
+    .debug-item {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: var(--card);
+      border: 1px solid rgba(216, 205, 187, 0.8);
+      box-shadow: 0 10px 24px rgba(54, 44, 24, 0.06);
+    }
+
+    .debug-item strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--debug);
+    }
+
+    .debug-item pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 12px;
+      color: #4b5563;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .messages,
+      .debug-list {
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="page">
+    <section class="hero">
+      <h1>旅游规划机器人</h1>
+      <p>这是新增的 FastAPI + Vue 单页入口，保留原有 Gradio 演示方式不变。</p>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">聊天对话</div>
+            <div class="panel-subtitle">Thread ID: {{ threadId || '正在创建会话...' }}</div>
+          </div>
+          <div class="panel-subtitle">{{ isLoading ? '正在生成中' : '已就绪' }}</div>
+        </div>
+
+        <div class="messages" ref="messagePanel">
+          <div v-if="messages.length === 0" class="empty">
+            可以先试试：“帮我规划一个周末去杭州的两天行程”。
+          </div>
+          <div
+            v-for="message in messages"
+            :key="message.id"
+            class="message"
+            :class="message.role"
+          >
+            <div class="message-label">{{ message.role === 'user' ? '用户' : '助手' }}</div>
+            <div v-if="message.role === 'assistant'" class="message-markdown" v-html="renderMarkdown(message.content)"></div>
+            <div v-else class="message-text">{{ message.content }}</div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <textarea
+            v-model="draft"
+            placeholder="输入你的旅行需求，例如：我想五一去成都玩3天，偏美食和轻松路线。"
+            @keydown.enter.exact.prevent="sendMessage"
+          ></textarea>
+          <div class="actions">
+            <div class="meta">Shift + Enter 换行，Enter 发送</div>
+            <button class="button" :disabled="isLoading || !draft.trim() || !threadId" @click="sendMessage">
+              {{ isLoading ? '规划中...' : '发送' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">工具调试面板</div>
+            <div class="panel-subtitle">展示工具调用开始、结束和输出摘要</div>
+          </div>
+        </div>
+        <div class="debug-list">
+          <div v-if="debugLogs.length === 0" class="empty">
+            发送消息后，这里会显示工具调用过程。
+          </div>
+          <div v-for="item in debugLogs" :key="item.id" class="debug-item">
+            <strong>{{ item.title }}</strong>
+            <pre>{{ item.content }}</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const { createApp, nextTick } = Vue;
+
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+    });
+
+    createApp({
+      data() {
+        return {
+          threadId: "",
+          draft: "",
+          isLoading: false,
+          messages: [],
+          debugLogs: [],
+          nextMessageId: 1,
+          nextDebugId: 1,
+        };
+      },
+      async mounted() {
+        await this.createSession();
+      },
+      methods: {
+        async createSession() {
+          const response = await fetch("/sessions", { method: "POST" });
+          const data = await response.json();
+          this.threadId = data.thread_id;
+        },
+        addMessage(role, content) {
+          const id = this.nextMessageId++;
+          this.messages.push({ id, role, content });
+          return id;
+        },
+        appendDebug(title, content) {
+          this.debugLogs.unshift({
+            id: this.nextDebugId++,
+            title,
+            content: typeof content === "string" ? content : JSON.stringify(content, null, 2),
+          });
+        },
+        renderMarkdown(content) {
+          const rawHtml = marked.parse(content || "");
+          return DOMPurify.sanitize(rawHtml);
+        },
+        async sendMessage() {
+          if (this.isLoading || !this.draft.trim() || !this.threadId) {
+            return;
+          }
+
+          const userText = this.draft.trim();
+          this.draft = "";
+          this.isLoading = true;
+
+          this.addMessage("user", userText);
+          const assistantId = this.addMessage("assistant", "");
+
+          try {
+            const response = await fetch("/chat/stream", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                thread_id: this.threadId,
+                message: userText,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(errorText || `HTTP ${response.status}`);
+            }
+
+            if (!response.body) {
+              throw new Error("响应未返回可读取的流。");
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                this.handleEvent(assistantId, JSON.parse(line));
+              }
+            }
+
+            if (buffer.trim()) {
+              this.handleEvent(assistantId, JSON.parse(buffer));
+            }
+          } catch (error) {
+            const message = error?.message || String(error);
+            this.messages = this.messages.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: item.content || `请求失败：${message}` }
+                : item
+            );
+            this.appendDebug("请求失败", message);
+          } finally {
+            this.isLoading = false;
+            await nextTick();
+            this.scrollMessagesToBottom();
+          }
+        },
+        handleEvent(assistantId, event) {
+          if (event.type === "chunk") {
+            this.messages = this.messages.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: item.content + event.content }
+                : item
+            );
+          } else if (event.type === "tool_start") {
+            this.appendDebug(`Starting tool: ${event.name}`, event.input || {});
+          } else if (event.type === "tool_end") {
+            this.appendDebug(`Done tool: ${event.name}`, event.output || {});
+          } else if (event.type === "error") {
+            const detail = `${event.error.class_name}: ${event.error.message}`;
+            this.messages = this.messages.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: item.content || `请求失败：${detail}` }
+                : item
+            );
+            this.appendDebug("后端异常", detail);
+          }
+        },
+        scrollMessagesToBottom() {
+          const panel = this.$refs.messagePanel;
+          if (panel) {
+            panel.scrollTop = panel.scrollHeight;
+          }
+        },
+      },
+      watch: {
+        messages: {
+          deep: true,
+          handler() {
+            nextTick().then(() => this.scrollMessagesToBottom());
+          },
+        },
+      },
+    }).mount("#app");
+  </script>
+</body>
+</html>
