@@ -13,6 +13,7 @@ from utils.helper import get_thread_id
 
 DEFAULT_MODEL_NAME = "deepseek-v4-flash"
 DEFAULT_RECURSION_LIMIT = 60
+STREAMING_RESPONSE_NODE = "final_responder"
 logger = logging.getLogger(__name__)
 
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
@@ -48,12 +49,29 @@ def create_session(model_name: str = DEFAULT_MODEL_NAME) -> Dict[str, Any]:
     }
 
 
+def _event_node_name(event: Dict[str, Any]) -> str | None:
+    metadata = event.get("metadata") or {}
+    node_name = metadata.get("langgraph_node")
+    if node_name:
+        return str(node_name)
+
+    checkpoint_ns = metadata.get("langgraph_checkpoint_ns")
+    if isinstance(checkpoint_ns, str) and checkpoint_ns:
+        return checkpoint_ns.split(":", 1)[0]
+
+    return None
+
+
 def _normalize_event(event: Dict[str, Any]) -> Dict[str, Any] | None:
     # 作用：把底层事件整理成统一格式，方便前端或接口层消费。
     # 将底层框架事件转换成前端更容易消费的统一结构。
     kind = event["event"]
 
     if kind == "on_chat_model_stream":
+        node_name = _event_node_name(event)
+        if node_name and node_name != STREAMING_RESPONSE_NODE:
+            return None
+
         content = event["data"]["chunk"].content
         if content:
             # 过滤空分片，只向外输出真正的模型内容。
@@ -163,3 +181,4 @@ async def iter_chat_event_lines(
             },
         }
         yield json.dumps(error_event, ensure_ascii=False) + "\n"
+

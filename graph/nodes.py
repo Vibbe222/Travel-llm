@@ -4,29 +4,39 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from new.agents import StageExecutor
-from new.prompts.clarify import CLARIFY_PROMPT
-from new.prompts.finalize import FINALIZE_PROMPT
-from new.prompts.intent import INTENT_PROMPT
-from new.prompts.planner import PLANNER_PROMPT
-from new.prompts.validation import VALIDATION_PROMPT
-from new.tools import (
-    attractions_tool,
-    location_tool,
-    nearby_tool,
-    route_tool,
-    web_search_tool,
+from agents.stage_executor import StageExecutor
+from prompts.clarify import CLARIFY_PROMPT
+from prompts.finalize import FINALIZE_PROMPT
+from prompts.intent import INTENT_PROMPT
+from prompts.planner import PLANNER_PROMPT
+from prompts.validation import VALIDATION_PROMPT
+from tools import (
+    get_attractions_information,
+    get_location_coordinate,
+    route_planning,
+    search_nearby_poi,
+    web_search,
 )
 
 
-def build_nodes(model_name: str) -> dict[str, Any]:
+class ToolBundle:
+    def __init__(self):
+        self.web_search = web_search
+        self.attractions = get_attractions_information
+        self.location = get_location_coordinate
+        self.route = route_planning
+        self.nearby = search_nearby_poi
+
+
+def build_nodes(model_name: str, tools: ToolBundle | None = None) -> dict[str, Any]:
+    tool_bundle = tools or ToolBundle()
     return {
         "intent_router": IntentRouterNode(model_name),
-        "destination_clarifier": DestinationClarifierNode(model_name),
-        "attraction_collector": AttractionCollectorNode(),
+        "destination_clarifier": DestinationClarifierNode(model_name, tool_bundle),
+        "attraction_collector": AttractionCollectorNode(tool_bundle),
         "itinerary_planner": ItineraryPlannerNode(model_name),
-        "transport_validator": TransportValidatorNode(model_name),
-        "poi_enricher": PoiEnricherNode(),
+        "transport_validator": TransportValidatorNode(model_name, tool_bundle),
+        "poi_enricher": PoiEnricherNode(tool_bundle),
         "final_responder": FinalResponderNode(model_name),
     }
 
@@ -50,7 +60,7 @@ class IntentRouterNode:
             or state.get("selected_destination")
             or _extract_destination(latest_user)
         )
-        constraints = state.get("user_constraints", {}).copy()
+        constraints = dict(state.get("user_constraints", {}))
         constraints.update(_extract_constraints(latest_user))
         if isinstance(result.get("user_constraints"), dict):
             constraints.update(result["user_constraints"])
@@ -76,7 +86,8 @@ class IntentRouterNode:
 
 
 class DestinationClarifierNode:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, tools: ToolBundle | None = None):
+        self.tools = tools or ToolBundle()
         self.executor = StageExecutor(
             model_name=model_name,
             prompt_template=CLARIFY_PROMPT,
@@ -85,7 +96,7 @@ class DestinationClarifierNode:
 
     async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         latest_user = _latest_user_message(state)
-        tool_result = web_search_tool.invoke(
+        tool_result = self.tools.web_search.invoke(
             {
                 "keywords": f"{latest_user} 旅游 城市 推荐",
                 "max_results": 5,
@@ -93,8 +104,9 @@ class DestinationClarifierNode:
         )
 
         candidate_destinations = []
-        if tool_result["success"]:
-            for item in tool_result["data"][:3]:
+        validation_issues = list(state.get("validation_issues", []))
+        if tool_result.get("success"):
+            for item in tool_result.get("data", {}).get("results", [])[:3]:
                 candidate_destinations.append(
                     {
                         "name": item.get("title", "")[:30] or item.get("href", ""),
@@ -102,19 +114,22 @@ class DestinationClarifierNode:
                         "snippet": item.get("body", ""),
                     }
                 )
+        else:
+            validation_issues.append(
+                {
+                    "stage": "destination_clarifier",
+                    "message": "目的地候选搜索失败。",
+                    "detail": tool_result.get("error"),
+                }
+            )
 
         selected_destination = state.get("selected_destination") or _extract_destination(latest_user)
-        message = ""
         if not selected_destination and candidate_destinations:
             llm_result = await self.executor.run(
                 state,
                 candidate_destinations=json.dumps(candidate_destinations, ensure_ascii=False, indent=2),
             )
-            message = llm_result.get("content", "").strip()
-            selected_destination = _extract_destination(message) or candidate_destinations[0]["name"]
-
-        if not selected_destination and candidate_destinations:
-            selected_destination = candidate_destinations[0]["name"]
+            selected_destination = _extract_destination(llm_result.get("content", "")) or candidate_destinations[0]["name"]
 
         response_message = (
             f"当前需求里没有明确目的地，我先给出候选方向："
@@ -126,12 +141,16 @@ class DestinationClarifierNode:
             "candidate_destinations": candidate_destinations,
             "selected_destination": selected_destination or "",
             "needs_clarification": not bool(selected_destination),
+            "validation_issues": validation_issues,
             "final_status": "clarified" if selected_destination else "need_user_input",
             "messages": [AIMessage(content=response_message)] if candidate_destinations else [],
         }
 
 
 class AttractionCollectorNode:
+    def __init__(self, tools: ToolBundle | None = None):
+        self.tools = tools or ToolBundle()
+
     async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         destination = state.get("selected_destination", "").strip()
         if not destination:
@@ -141,12 +160,12 @@ class AttractionCollectorNode:
                 "attractions": [],
             }
 
-        attraction_result = attractions_tool.invoke({"destination": destination})
+        attraction_result = self.tools.attractions.invoke({"destination": destination})
         attractions = []
         validation_issues = list(state.get("validation_issues", []))
 
-        if attraction_result["success"]:
-            scenic_list = attraction_result["data"].get("scenic_list", [])
+        if attraction_result.get("success"):
+            scenic_list = attraction_result.get("data", {}).get("scenic_list", [])
             for spot in scenic_list[:5]:
                 attraction = {
                     "name": spot.get("name", ""),
@@ -158,14 +177,15 @@ class AttractionCollectorNode:
                     "citycode": "",
                 }
 
-                coord_result = location_tool.invoke(
+                coord_result = self.tools.location.invoke(
                     {
                         "location": attraction["name"],
                         "city": destination,
                     }
                 )
-                if coord_result["success"] and coord_result["data"]:
-                    coord = coord_result["data"][0]
+                locations = coord_result.get("data", {}).get("locations", []) if coord_result.get("success") else []
+                if locations:
+                    coord = locations[0]
                     attraction["address"] = coord.get("address", "")
                     attraction["coordinate"] = coord.get("coordinate", "")
                     attraction["citycode"] = coord.get("citycode", "")
@@ -174,7 +194,7 @@ class AttractionCollectorNode:
                         {
                             "stage": "attraction_collector",
                             "message": f"景点“{attraction['name']}”坐标补全失败。",
-                            "detail": coord_result["error"],
+                            "detail": coord_result.get("error"),
                         }
                     )
                 attractions.append(attraction)
@@ -183,7 +203,7 @@ class AttractionCollectorNode:
                 {
                     "stage": "attraction_collector",
                     "message": "景点采集失败。",
-                    "detail": attraction_result["error"],
+                    "detail": attraction_result.get("error"),
                 }
             )
 
@@ -207,6 +227,7 @@ class ItineraryPlannerNode:
         self.executor = StageExecutor(
             model_name=model_name,
             prompt_template=PLANNER_PROMPT,
+            expects_json=True,
             fallback=_fallback_plan_result,
         )
 
@@ -231,7 +252,8 @@ class ItineraryPlannerNode:
 
 
 class TransportValidatorNode:
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, tools: ToolBundle | None = None):
+        self.tools = tools or ToolBundle()
         self.executor = StageExecutor(
             model_name=model_name,
             prompt_template=VALIDATION_PROMPT,
@@ -249,7 +271,7 @@ class TransportValidatorNode:
                 if not first.get("coordinate") or not second.get("coordinate"):
                     continue
 
-                route_result = route_tool.invoke(
+                route_result = self.tools.route.invoke(
                     {
                         "origin": first["coordinate"],
                         "destination": second["coordinate"],
@@ -258,27 +280,28 @@ class TransportValidatorNode:
                     }
                 )
 
-                if not route_result["success"]:
+                if not route_result.get("success"):
                     needs_replan = True
                     validation_issues.append(
                         {
                             "stage": "transport_validator",
                             "message": f"{first['name']} 到 {second['name']} 的交通查询失败。",
-                            "detail": route_result["error"],
+                            "detail": route_result.get("error"),
                         }
                     )
                     continue
 
+                route_data = route_result.get("data", {})
                 segment = {
                     "day": day.get("day"),
                     "from": first["name"],
                     "to": second["name"],
-                    "route": route_result["data"],
+                    "route": route_data,
                 }
                 transport_segments.append(segment)
 
                 try:
-                    walking_distance = int(route_result["data"].get("walking_distance", "0"))
+                    walking_distance = int(route_data.get("walking_distance", "0"))
                 except Exception:
                     walking_distance = 0
                 if walking_distance > 12000:
@@ -287,7 +310,7 @@ class TransportValidatorNode:
                         {
                             "stage": "transport_validator",
                             "message": f"{first['name']} 到 {second['name']} 的步行距离过长，建议重排行程。",
-                            "detail": route_result["data"],
+                            "detail": route_data,
                         }
                     )
 
@@ -306,21 +329,26 @@ class TransportValidatorNode:
 
 
 class PoiEnricherNode:
+    def __init__(self, tools: ToolBundle | None = None):
+        self.tools = tools or ToolBundle()
+
     async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
         meal_options = []
         hotel_options = []
+        validation_issues = list(state.get("validation_issues", []))
         last_spot = _get_last_spot(state)
         if not last_spot or not last_spot.get("coordinate"):
             return {
                 "meal_options": meal_options,
                 "hotel_options": hotel_options,
+                "validation_issues": validation_issues,
                 "final_status": "poi_skipped",
             }
 
         citycode = last_spot.get("citycode", "")
         coordinate = last_spot["coordinate"]
 
-        food_result = nearby_tool.invoke(
+        food_result = self.tools.nearby.invoke(
             {
                 "location": coordinate,
                 "city": citycode,
@@ -330,10 +358,18 @@ class PoiEnricherNode:
                 "page": 1,
             }
         )
-        if food_result["success"]:
-            meal_options = food_result["data"].get("pois", [])[:3]
+        if food_result.get("success"):
+            meal_options = food_result.get("data", {}).get("pois", [])[:3]
+        else:
+            validation_issues.append(
+                {
+                    "stage": "poi_enricher",
+                    "message": "餐饮推荐查询失败。",
+                    "detail": food_result.get("error"),
+                }
+            )
 
-        hotel_result = nearby_tool.invoke(
+        hotel_result = self.tools.nearby.invoke(
             {
                 "location": coordinate,
                 "city": citycode,
@@ -343,12 +379,21 @@ class PoiEnricherNode:
                 "page": 1,
             }
         )
-        if hotel_result["success"]:
-            hotel_options = hotel_result["data"].get("pois", [])[:3]
+        if hotel_result.get("success"):
+            hotel_options = hotel_result.get("data", {}).get("pois", [])[:3]
+        else:
+            validation_issues.append(
+                {
+                    "stage": "poi_enricher",
+                    "message": "住宿推荐查询失败。",
+                    "detail": hotel_result.get("error"),
+                }
+            )
 
         return {
             "meal_options": meal_options,
             "hotel_options": hotel_options,
+            "validation_issues": validation_issues,
             "final_status": "poi_enriched",
         }
 
@@ -380,9 +425,9 @@ def _latest_user_message(state: dict[str, Any]) -> str:
 
 
 def _extract_destination(text: str) -> str:
-    match = re.search(r"(去|到|在)([\u4e00-\u9fa5]{2,8})(旅游|旅行|玩|逛|待|攻略)?", text)
+    match = re.search(r"(?:去|到|在)([\u4e00-\u9fa5]{2,8})(?:旅游|旅行|玩|逛|待|攻略|一日游|两日游|三日游)?", text)
     if match:
-        return match.group(2)
+        return match.group(1)
     return ""
 
 
@@ -399,6 +444,10 @@ def _extract_constraints(text: str) -> dict[str, Any]:
         constraints["style"] = "高强度"
     if "预算" in text:
         constraints["budget_note"] = text
+    if "酒店" in text or "住宿" in text:
+        constraints["hotel_note"] = text
+    if "餐" in text or "吃" in text:
+        constraints["meal_note"] = text
     return constraints
 
 
@@ -453,7 +502,7 @@ def _build_fallback_daily_plan(attractions: list[dict[str, Any]]) -> list[dict[s
                 "day": len(days) + 1,
                 "theme": "按景点顺序生成的参考版行程",
                 "spots": formatted_spots,
-                "notes": "这是基于景点顺序的示例安排，真实生产化版本应再结合时长、开放时间和交通做更细排程。",
+                "notes": "这是基于景点顺序的示例安排，后续可继续结合时长、开放时间和交通做更细排程。",
             }
         )
     return days
@@ -471,9 +520,6 @@ def _render_final_markdown(state: dict[str, Any]) -> str:
     lines = []
     destination = state.get("selected_destination") or "待确认目的地"
     lines.append(f"# {destination} 参考版旅游规划")
-    lines.append("")
-    lines.append("## 项目说明")
-    lines.append("这是一套 `new/` 目录下的阶段化参考实现输出，用来展示多节点图如何组织。")
     lines.append("")
     lines.append("## 每日行程")
     for day in state.get("daily_plan", []):

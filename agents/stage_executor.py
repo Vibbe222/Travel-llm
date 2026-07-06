@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 from models.qwen_factory import QwenLLMFactory
 
 
-def _safe_json_loads(text: str) -> dict[str, Any] | None:
+def safe_json_loads(text: str) -> dict[str, Any] | None:
     raw = text.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -23,7 +23,7 @@ def _safe_json_loads(text: str) -> dict[str, Any] | None:
 
 @dataclass
 class StageExecutor:
-    """Reusable LLM executor for stage-specific nodes."""
+    """Reusable LLM executor for one workflow stage."""
 
     model_name: str
     prompt_template: str
@@ -43,18 +43,16 @@ class StageExecutor:
         return self._llm
 
     async def run(self, state: dict[str, Any], **context: Any) -> dict[str, Any]:
-        prompt = self.prompt_template.format(
-            state_summary=json.dumps(_json_safe(state), ensure_ascii=False, indent=2),
-            **{key: _json_safe(value) for key, value in context.items()},
-        )
-
         try:
-            llm = self._get_llm()
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            prompt = self.prompt_template.format(
+                state_summary=json.dumps(_json_safe(state), ensure_ascii=False, indent=2),
+                **{key: _json_safe(value) for key, value in context.items()},
+            )
+            response = await self._get_llm().ainvoke([HumanMessage(content=prompt)])
             content = getattr(response, "content", "") or ""
 
             if self.expects_json:
-                parsed = _safe_json_loads(content)
+                parsed = safe_json_loads(content)
                 if parsed is not None:
                     return parsed
 
@@ -64,10 +62,7 @@ class StageExecutor:
                 fallback_data = self.fallback(state)
                 fallback_data.setdefault("fallback_reason", str(exc))
                 return fallback_data
-            return {
-                "content": "",
-                "error": str(exc),
-            }
+            return {"content": "", "error": str(exc)}
 
 
 def _json_safe(value: Any) -> Any:
@@ -75,12 +70,13 @@ def _json_safe(value: Any) -> Any:
         return value
 
     if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
+        return {str(key): _json_safe(item) for key, item in value.items()}
 
     if isinstance(value, (list, tuple, set)):
-        return [_json_safe(v) for v in value]
+        return [_json_safe(item) for item in value]
 
     if hasattr(value, "content"):
         return _json_safe(getattr(value, "content", ""))
 
     return str(value)
+
