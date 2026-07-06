@@ -1,190 +1,272 @@
 # 旅游规划机器人
 
-一个基于 LangGraph 的旅游规划机器人示例项目，提供 Gradio Web 界面，结合通义千问、高德地图 API、网页搜索和景点抓取能力生成旅游规划结果。
+基于 LangGraph 的旅游规划机器人示例项目。项目使用多节点工作流组织意图识别、景点采集、行程生成、交通校验、周边推荐和最终回复，并提供 FastAPI + Vue 单页前端与原有 Gradio 演示入口。
 
 ## 功能概览
 
-- 基于 LangGraph 组织 Agent 与工具调用流程
-- 使用通义千问 `deepseek-v4-flash` 生成旅游规划回复
-- 支持地点经纬度查询
-- 支持周边 POI 搜索
-- 支持公交路线规划
-- 支持网页搜索
-- 支持景点信息抓取
-- 提供 Gradio 聊天界面和调试信息面板
+- 基于 LangGraph 编排多阶段旅游规划流程
+- 使用阿里云百炼 OpenAI 兼容接口调用 `deepseek-v4-flash`
+- 支持用户可见的流式进度反馈和前置计划摘要
+- 支持停止生成、新建会话、本地历史会话和 Markdown 导出
+- 支持工具调用调试面板、错误分层展示和降级提示
+- 支持马蜂窝景点抓取，失败时可降级到 Web 搜索
+- 支持 Tavily 或 DuckDuckGo Web 搜索 provider
+- 支持高德地图坐标查询、周边 POI 和公共交通路线规划
+- 支持 Redis TTL 缓存和 LangGraph checkpoint 持久化
 
 ## 项目结构
 
 ```text
-旅游规划机器人/
-├─ agents/          # Agent 定义
-├─ graph/           # LangGraph 流程编排
-├─ models/          # 模型工厂
-├─ prompts/         # 提示词模板
-├─ states/          # 状态定义
-├─ tools/           # 外部工具能力
-├─ utils/           # 辅助函数
-├─ requirements.txt # 项目依赖列表
-└─ webrun.py        # Web 启动入口
+Travel_llm/
+├─ agents/                 # 阶段执行器与 LLM 调用封装
+├─ api/                    # FastAPI 服务入口
+├─ graph/                  # LangGraph 图、路由和 checkpoint
+├─ models/                 # 模型工厂
+├─ prompts/                # 分阶段提示词
+├─ states/                 # LangGraph 状态定义
+├─ templates/              # FastAPI 单页前端
+├─ tests/                  # 自动化测试
+├─ tools/                  # 景点、地图、搜索、交通等工具
+├─ utils/                  # Redis 缓存与辅助函数
+├─ chat_service.py         # 流式事件整理与聊天服务
+├─ run_fastapi.py          # FastAPI 启动入口
+├─ webrun.py               # Gradio 启动入口
+├─ settings.py             # 统一配置读取与校验
+└─ requirements.txt
 ```
 
 ## 运行环境
 
-- Python 3.10 或 3.11
+- Python 3.11
 - Windows PowerShell
-- 本机已安装 Google Chrome
-- 可访问阿里云百炼和高德地图相关接口
+- Google Chrome
+- 可访问阿里云百炼、高德地图、Tavily 或 DuckDuckGo
+- 可选：本地 Redis，用于缓存和会话 checkpoint
 
-## 安装步骤
-
-建议先进入项目根目录再执行命令：
-
-```powershell
-cd "E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人"
-```
-
-创建并激活虚拟环境：
+## 安装
 
 ```powershell
+cd "E:\py_project\Travel_llm"
 python -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install --upgrade pip
-```
-
-### 方式一：直接安装仓库依赖
-
-如果你的目标是先把项目跑起来，最省事的是直接安装：
-
-```powershell
 pip install -r requirements.txt
 ```
 
-### 方式二：先安装核心依赖
-
-如果你想先最小化安装，可以先装这一组：
-
-```powershell
-pip install beautifulsoup4 duckduckgo_search fastapi gradio langchain-core langchain-openai langgraph langgraph-prebuilt pydantic python-dotenv requests selenium uvicorn
-```
-
-上述命令仅列出项目直接使用的依赖，其余传递依赖会由 `pip` 自动安装。
-
 ## 环境变量
 
-项目运行前至少需要准备以下环境变量：
+复制 `.env.example` 为 `.env`，并填写真实 key：
 
-- `DASHSCOPE_API_KEY`
-- `AMAP_API_KEY`
+```powershell
+Copy-Item .env.example .env
+```
 
-推荐在项目根目录创建 `.env` 文件：
+核心配置：
 
 ```env
-DASHSCOPE_API_KEY=your_dashscope_key
-AMAP_API_KEY=your_amap_key
+APP_ENV=development
+MODEL_NAME=deepseek-v4-flash
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DASHSCOPE_API_KEY=your_dashscope_api_key
+AMAP_API_KEY=your_amap_api_key
+
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your_tavily_api_key
+
+REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_KEY_PREFIX=travel_llm
 ```
 
 说明：
 
-- `DASHSCOPE_API_KEY` 用于通过阿里云百炼 OpenAI 兼容接口调用通义千问
-- `AMAP_API_KEY` 用于调用高德地图地理编码、周边搜索和路线规划接口
+- `DASHSCOPE_API_KEY`：模型调用使用。
+- `AMAP_API_KEY`：高德地理编码、周边 POI、路线规划使用。
+- `WEB_SEARCH_PROVIDER`：可选 `duckduckgo` 或 `tavily`。
+- `TAVILY_API_KEY`：当 `WEB_SEARCH_PROVIDER=tavily` 时必须配置。
+- `REQUIRE_API_KEYS`：控制访问本项目后端接口时是否要求鉴权，不是第三方服务 key。
 
-## 启动项目
+不要把真实 `.env` 提交到 Git。
 
-在项目根目录执行：
+## 启动方式
+
+### FastAPI + Vue 前端
 
 ```powershell
-python .\webrun.py
+.\.venv\Scripts\python.exe run_fastapi.py
 ```
 
-当前默认模型为 `deepseek-v4-flash`。
+访问：
 
-## 模型说明
+```text
+http://127.0.0.1:8000/
+```
 
-当前项目默认使用阿里云百炼的 OpenAI 兼容接口访问通义千问：
+常用接口：
 
-- 模型名：`deepseek-v4-flash`
-- Base URL：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `GET /health`
+- `POST /sessions`
+- `POST /chat/stream`
 
-模型创建逻辑位于：
+`/chat/stream` 使用 NDJSON 流式返回，事件包括：
 
-- [models/qwen_factory.py](E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人\models\qwen_factory.py)
+- `progress`
+- `chunk`
+- `tool_start`
+- `tool_end`
+- `tool_error`
+- `degradation`
+- `error`
+- `done`
 
-原有的 OpenAI 工厂文件保留，但默认运行链路不再使用。
+### Gradio 演示入口
 
-## 工具能力说明
+```powershell
+.\.venv\Scripts\python.exe webrun.py
+```
 
-当前项目主要接入了以下工具：
+Gradio 入口保留用于兼容原演示方式。
 
-- `web_search`：DuckDuckGo 搜索
-- `get_location_coordinate`：地点转经纬度
-- `search_nearby_poi`：周边地点搜索
-- `route_planning`：公交路线规划
-- `get_attractions_information`：景点信息抓取
-- `save_info_and_clear_history`：保存信息并清理历史
+## 工作流说明
 
-其中：
+当前 LangGraph 流程：
 
-- 高德相关工具依赖 `AMAP_API_KEY`
-- 景点抓取工具依赖 Selenium 和本机 Chrome
+```text
+intent_router
+  -> clarification_responder 或 attraction_collector
+  -> itinerary_planner
+  -> transport_validator
+  -> poi_enricher
+  -> final_responder
+```
+
+关键行为：
+
+- 识别出目的地后，后端会先流式输出前置计划摘要。
+- 未识别出明确目的地时，会立即反问用户，不继续调用景点搜索等重工具。
+- 最终行程继续追加到同一条助手消息中。
+
+前置计划摘要示例：
+
+```text
+任务：用户明确想去福州游玩3天，需要获取福州的景点信息。
+回顾：用户描述了本次旅行需求，目的地已明确为“福州”。
+分析：需要先获取福州的景点信息，包括景点简介、开放时间和预计游玩时间等。
+计划：调用“景点搜索工具”获取福州的景点列表。
+```
+
+## 工具能力
+
+| 工具 | 文件 | 说明 |
+|---|---|---|
+| `get_attractions_information` | `tools/attractions.py` | 使用 Selenium 抓取马蜂窝景点信息 |
+| `web_search` | `tools/web_search.py` | Tavily 或 DuckDuckGo 搜索 |
+| `get_location_coordinate` | `tools/locations.py` | 高德地理编码 |
+| `search_nearby_poi` | `tools/nearby.py` | 高德周边 POI |
+| `route_planning` | `tools/transportation.py` | 高德公共交通路线 |
+| `save_info_and_clear_history` | `tools/save.py` | 保存工具返回的重要信息 |
+| `static_map.get_location_coordinate` | `tools/static_map.py` | 生成静态地图图片 |
+
+景点工具缓存策略：
+
+- 只缓存 `source == "mafengwo"` 的成功结果；
+- `web_search_fallback` 不缓存，避免一次降级长期污染结果。
+
+## 降级与错误展示
+
+当前前端会分层展示：
+
+- 用户可读错误
+- 调试详情
+- 工具原始返回
+
+发生 fallback、缓存旧数据、工具失败或不完整数据时，会显示降级提示：
+
+```text
+降级提示
+出问题的组件：景点主数据源抓取组件（get_attractions_information / Selenium）
+原因：Chrome WebDriver 启动或页面抓取失败，已改用网页搜索结果。
+影响：景点详情、开放时间或停留时长可能不如主数据源完整。
+可信度：中等
+```
+
+## Redis 缓存与 checkpoint
+
+Redis 用于两类能力：
+
+- 工具 TTL 缓存；
+- LangGraph checkpoint 持久化。
+
+Redis 不可用时：
+
+- 工具缓存自动退化为 miss；
+- checkpointer 回退到内存；
+- 主流程继续运行。
+
+## 测试
+
+运行完整测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+当前覆盖内容包括：
+
+- API smoke
+- settings 校验
+- Redis cache/checkpoint
+- LangGraph 工作流
+- 流式事件与前置摘要
+- 各工具成功和失败路径
+- Tavily / DuckDuckGo Web 搜索 provider
 
 ## 常见问题
 
-### 1. 编辑器里提示未解析的引用
+### DuckDuckGo 限流
 
-例如：
-
-- `from prompts.main import agent_prompt_template`
-- `from states.state import PublicState`
-- `from tools import *`
-
-这类导入要求 Python 把当前项目目录当成模块搜索根目录。建议：
-
-1. IDE 直接打开本项目目录，而不是更上一级目录
-2. 运行时从项目根目录执行 `python .\webrun.py`
-3. 解释器切换到项目虚拟环境 `.venv\Scripts\python.exe`
-
-有些情况下编辑器会报红线，但运行 `webrun.py` 仍然可以成功。
-
-### 2. 缺少环境变量
-
-如果出现和通义千问或高德 API 相关的报错，先检查 `.env` 中是否正确配置了：
-
-- `DASHSCOPE_API_KEY`
-- `AMAP_API_KEY`
-
-### 3. Selenium / Chrome 启动失败
-
-`tools/attractions.py` 使用了 `webdriver.Chrome(...)`。如果这里报错，请检查：
-
-- 本机是否安装 Chrome
-- Selenium 版本是否可正常驱动本机 Chrome
-- 当前网络和浏览器环境是否允许抓取目标页面
-
-### 4. 从上一级目录运行导致找不到模块
-
-如果报错类似：
+如果 `web_search` 返回：
 
 ```text
-ModuleNotFoundError: No module named 'prompts'
+web_search_timeout
+202 Ratelimit
 ```
 
-通常是因为运行目录不对。请切换到项目根目录后再启动：
+建议切换到 Tavily：
 
-```powershell
-cd "E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人"
-python .\webrun.py
+```env
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your_tavily_api_key
 ```
 
-## 备注
+### Selenium / Chrome 启动失败
 
-- `requirements.txt` 只保留项目源码直接使用的依赖
-- 间接依赖由 `pip` 根据固定版本自动解析安装
+景点抓取依赖本机 Chrome 和 Selenium WebDriver。如果失败：
 
-## 面试准备材料
+- 检查 Chrome 是否安装；
+- 检查 Selenium 是否能驱动当前 Chrome；
+- 检查目标网页是否可访问；
+- 查看前端降级提示和工具调试日志。
 
-如果你想基于这个项目准备面试，仓库中新增了一组可直接使用的材料：
+### 前端页面还是旧样式
 
-- [面试材料总览](E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人\docs\interview-prep\README.md)
-- [项目讲稿](E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人\docs\interview-prep\project-walkthrough.md)
-- [高频追问题库](E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人\docs\interview-prep\mock-qa.md)
-- [7 天训练清单](E:\BaiduNetdiskDownload\AI\langGraph_day01-day05\旅游规划机器人\docs\interview-prep\7-day-plan.md)
+浏览器可能缓存了旧 HTML。使用：
+
+```text
+Ctrl + F5
+```
+
+或无痕窗口重新打开：
+
+```text
+http://127.0.0.1:8000/
+```
+
+### 缓存导致结果不符合预期
+
+可清理 Redis 中对应工具缓存后重试。景点 fallback 结果当前不会再写入长期缓存。
+
+## 安全提示
+
+- 不要提交 `.env`。
+- 不要把 `DASHSCOPE_API_KEY`、`AMAP_API_KEY`、`TAVILY_API_KEY` 写入文档或前端。
+- 如果 key 已经暴露在聊天、截图或日志中，建议去对应平台轮换。

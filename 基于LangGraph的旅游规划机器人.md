@@ -1,158 +1,309 @@
-# 基于LangGraph的旅游规划机器人
+# 基于 LangGraph 的旅游规划机器人
 
 ## 项目简介
 
-本项目是一个基于大语言模型（LLM）和LangGraph框架的智能旅游规划助手。它可以根据用户的需求，自动为用户规划旅游行程，包括景点推荐、路线规划、交通查询、餐饮和住宿建议等。用户只需输入自己的旅游需求，机器人会一步步引导并生成详细的旅游计划。
+本项目是一个基于 LangGraph 和大语言模型的智能旅游规划助手。系统会根据用户输入的旅行需求，识别目的地、采集景点信息、生成每日行程、校验交通可行性，并补充餐饮和住宿建议。
 
-## 主要功能
-- **目的地智能推荐**：根据用户输入，智能识别并推荐合适的旅游城市或景点。
-- **景点信息查询**：自动抓取并整理目的地的热门景点、简介、开放时间、游玩建议等。
-- **路线与交通规划**：根据景点地理位置，自动规划合理的每日游玩路线，并查询交通方式、距离和耗时。
-- **周边餐饮与住宿推荐**：结合每日行程，推荐附近的餐厅和酒店。
-- **信息保存与历史管理**：支持保存当前规划结果，方便后续查阅。
+项目当前同时保留两种界面：
+
+- FastAPI + Vue 单页前端：当前主要体验入口；
+- Gradio 页面：保留原演示入口。
+
+## 当前核心能力
+
+- **意图识别与目的地判断**：识别用户是否提出新规划、修改规划或确认规划。
+- **目的地缺失澄清**：未识别出明确目的地时，立即反问用户，不继续调用重工具。
+- **前置计划摘要**：识别出目的地后，流式输出“任务 / 回顾 / 分析 / 计划”。
+- **景点信息抓取**：优先使用 Selenium 抓取马蜂窝景点信息。
+- **搜索降级**：景点主数据源失败时，可降级到 Tavily 或 DuckDuckGo Web 搜索。
+- **路线与交通规划**：基于高德地图进行坐标查询、周边 POI 和公共交通路线规划。
+- **餐饮与住宿推荐**：根据最后一个景点附近 POI 补充推荐。
+- **流式前端体验**：展示进度、工具调用、错误、降级提示和最终行程。
+- **会话管理**：支持新建会话、本地历史会话和 Markdown 导出。
+- **缓存与持久化**：支持 Redis TTL 缓存和 LangGraph checkpoint。
 
 ## 目录结构说明
 
+```text
+├── agents/                 # 阶段执行器
+├── api/                    # FastAPI 服务入口
+├── graph/                  # LangGraph 图、节点和路由
+├── models/                 # 模型工厂
+├── prompts/                # 分阶段提示词
+├── states/                 # 状态定义
+├── templates/              # Vue 单页前端
+├── tests/                  # 自动化测试
+├── tools/                  # 景点、搜索、地图、交通等工具
+├── utils/                  # Redis 缓存与辅助函数
+├── chat_service.py         # 流式事件转换与聊天服务
+├── run_fastapi.py          # FastAPI 启动入口
+├── webrun.py               # Gradio 启动入口
+├── settings.py             # 统一配置
+└── requirements.txt
 ```
-├── agents/           # 智能体相关代码，负责决策和调用工具
-├── graph/            # 状态流转与LangGraph工作流定义
-├── models/           # 大语言模型工厂与模型管理
-├── prompts/          # 提示词模板，定义AI的行为规范
-├── states/           # 状态管理，定义对话和数据流转结构
-├── tools/            # 具体功能工具，如景点、交通、周边、地图等
-├── utils/            # 辅助工具函数
-├── webrun.py         # Web界面启动入口（Gradio）
-├── requirements.txt  # 依赖库列表
-├── README.md         # 项目说明文档
-├── travle.png        # 项目相关图片
-├── WorkFlow.png      # 工作流程图
+
+## 快速启动
+
+安装依赖：
+
+```powershell
+cd "E:\py_project\Travel_llm"
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-## 依赖安装
+复制配置：
 
-1. 安装Python 3.10及以上版本。
-2. 安装依赖库：
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. 配置环境变量（如需使用高德地图API等服务，需在根目录下创建`.env`文件，填写API KEY等信息）。
-
-## 启动方法
-
-直接运行Web界面：
-```bash
-python webrun.py
+```powershell
+Copy-Item .env.example .env
 ```
-启动后会自动打开Gradio网页界面，用户可直接输入需求与机器人对话。
 
-## 流程架构图
+填写 `.env`：
 
-![基于LangGraph的旅游攻略机器人](/Users/yuejunzhang/Downloads/基于LangGraph的旅游攻略机器人.png)
+```env
+DASHSCOPE_API_KEY=your_dashscope_api_key
+AMAP_API_KEY=your_amap_api_key
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your_tavily_api_key
+```
 
-## 主要模块与工具说明
+启动 FastAPI 前端：
 
-### agents/
-- `agents.py`：定义了Agent（智能体）和AsyncAgent（异步智能体），负责与大语言模型交互和决策。
+```powershell
+.\.venv\Scripts\python.exe run_fastapi.py
+```
 
-### graph/
-- `graph.py`：定义了整个对话和任务的流程图，描述了各个节点（如Agent、工具调用）之间的流转关系。
+访问：
 
-### models/
-- `factory.py`：封装了大语言模型的创建逻辑，目前支持OpenAI GPT系列。
+```text
+http://127.0.0.1:8000/
+```
 
-### prompts/
-- `main.py`：存放AI提示词模板，规范AI的行为和输出格式。
+启动 Gradio：
 
-### states/
-- `state.py`：定义了对话状态的数据结构（如PublicState），用于在各节点间传递消息。
+```powershell
+.\.venv\Scripts\python.exe webrun.py
+```
 
-### tools/
-- `attractions.py`：景点信息抓取与整理工具。
-- `locations.py`：地理坐标查询工具。
-- `nearby.py`：周边餐饮、住宿等POI查询工具。
-- `save.py`：信息保存工具。
-- `static_map.py`：静态地图图片获取工具。
-- `transportation.py`：交通路线规划工具。
-- `web_search.py`：网络搜索工具，辅助补全信息。
+## LangGraph 工作流
 
-### utils/
-- `helper.py`：常用辅助函数，如获取当前时间等。
+当前主流程：
 
-### webrun.py
-- Gradio Web界面入口，集成了对话、调试信息展示等。
+```text
+intent_router
+  -> clarification_responder
+  -> attraction_collector
+  -> itinerary_planner
+  -> transport_validator
+  -> poi_enricher
+  -> final_responder
+```
 
-## 主要API/工具参数与返回值说明
+路由说明：
 
-### 1. 景点信息查询（tools/attractions.py）
-- **函数**：`get_attractions_information(destination: str) -> dict`
-- **参数**：
-  - `destination`：目的地名称（如"长沙"），必须是具体城市或村镇名。
-- **返回**：
-  - `overview`：目的地简介
-  - `scenic_list`：景点列表（含名称、简介、开放时间等）
+- 如果用户确认已有方案，则直接进入 `final_responder`；
+- 如果未识别出目的地，则进入 `clarification_responder` 并结束；
+- 如果识别出目的地，则进入景点采集和后续规划流程。
 
-### 2. 路线规划（tools/transportation.py）
-- **函数**：`route_planning(origin: str, destination: str, origin_city_code: str, dest_city_code: str) -> dict`
-- **参数**：
-  - `origin`：出发点经纬度（如"113.129362,29.371356"）
-  - `destination`：目的地经纬度
-  - `origin_city_code`：出发城市代码
-  - `dest_city_code`：目的地城市代码
-- **返回**：
-  - `origin`、`destination`、`walking_distance`、`taxi_cost`、`public_transport_options_list`（公交方案列表）
+## 流式反馈设计
 
-### 3. 周边POI查询（tools/nearby.py）
-- **函数**：`search_nearby_poi(location: str, city: str, types: str, keyword: str, radius: int, offset: int, page: int)`
-- **参数**：
-  - `location`：中心点经纬度
-  - `city`：城市代码
-  - `types`：POI类型（如"中餐厅|酒店"）
-  - `keyword`：关键词
-  - `radius`：查询半径（米）
-  - `offset`：每页数量
-  - `page`：页码
-- **返回**：
-  - `pois`：POI列表（含名称、类型、地址、距离、评分、价格等）
+前端通过 `/chat/stream` 接收 NDJSON 事件。
 
-### 4. 信息保存（tools/save.py）
-- **函数**：`save_info_and_clear_history(infomation_to_save: str) -> Tuple[str, str]`
-- **参数**：
-  - `infomation_to_save`：需要保存的信息
-- **返回**：
-  - `content`：保存结果提示
-  - `artifact`：实际保存的信息
+主要事件：
 
-## 常见问题与改进建议
-- 若遇到API KEY失效、网络不通等问题，请检查.env配置和网络环境。
-- 若需支持更多城市或景点，可扩展相关工具模块。
-- 欢迎提出建议和反馈，帮助我们不断完善机器人功能！
+| 事件 | 说明 |
+|---|---|
+| `progress` | 用户可见进度 |
+| `chunk` | 助手回复文本片段 |
+| `tool_start` | 工具开始调用 |
+| `tool_end` | 工具调用完成 |
+| `degradation` | 降级提示 |
+| `tool_error` | 工具错误 |
+| `error` | 后端异常 |
+| `done` | 本轮完成 |
 
----
+前置计划摘要会以多条 `chunk` 流式输出：
 
-> 本项目适合初学者及零基础用户，界面友好，操作简单。只需输入"我想去哪里玩"，机器人就能帮你搞定一切旅游规划！ 
+```text
+任务：用户明确想去福州游玩3天，需要获取福州的景点信息。
+回顾：用户描述了本次旅行需求，目的地已明确为“福州”。
+分析：需要先获取福州的景点信息，包括景点简介、开放时间和预计游玩时间等。
+计划：调用“景点搜索工具”获取福州的景点列表。
+```
 
+## 工具说明
 
+### 景点工具
 
+文件：
 
+```text
+tools/attractions.py
+```
 
+能力：
 
+- 使用 Selenium 打开马蜂窝搜索页；
+- 找到目的地攻略页；
+- 抓取景点列表；
+- 进入景点详情页提取简介、开放时间和建议游玩时长。
 
+返回结构：
 
+```json
+{
+  "success": true,
+  "data": {
+    "source": "mafengwo",
+    "fallback_used": false,
+    "warnings": [],
+    "overview": "...",
+    "scenic_list": []
+  },
+  "error": null
+}
+```
 
+缓存策略：
 
+- 只缓存 `source == "mafengwo"` 的成功结果；
+- 不缓存 `web_search_fallback`，避免一次降级污染后续结果。
 
+### Web 搜索工具
 
+文件：
 
+```text
+tools/web_search.py
+```
 
+支持 provider：
 
+- `duckduckgo`
+- `tavily`
 
+推荐本地演示使用：
 
+```env
+WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=your_tavily_api_key
+```
 
+Tavily 字段映射：
 
+| Tavily | 项目字段 |
+|---|---|
+| `title` | `title` |
+| `url` | `href` |
+| `content` | `body` |
+| `score` | `score` |
 
+### 高德地图工具
 
+文件：
 
+- `tools/locations.py`
+- `tools/nearby.py`
+- `tools/transportation.py`
 
+能力：
 
+- 地点转坐标；
+- 周边餐饮、住宿 POI；
+- 公共交通路线规划。
 
+依赖：
 
+```env
+AMAP_API_KEY=your_amap_api_key
+```
+
+## 降级提示
+
+当工具使用 fallback、数据不完整、缓存旧数据或工具失败时，前端会展示降级提示。
+
+示例：
+
+```text
+降级提示
+出问题的组件：景点主数据源抓取组件（get_attractions_information / Selenium）
+原因：Chrome WebDriver 启动或页面抓取失败，已改用网页搜索结果。
+影响：景点详情、开放时间或停留时长可能不如主数据源完整。
+可信度：中等
+```
+
+调试详情仍会保留工具名、阶段、错误类型和原始返回摘要。
+
+## Redis 能力
+
+Redis 用于：
+
+- 外部工具查询 TTL 缓存；
+- LangGraph checkpoint 持久化。
+
+Redis 不可用时：
+
+- 缓存自动 miss；
+- checkpoint 回退内存；
+- 主流程不受影响。
+
+## 配置说明
+
+主要配置位于 `settings.py`，从 `.env` 读取：
+
+| 配置 | 说明 |
+|---|---|
+| `MODEL_NAME` | 模型名称 |
+| `DASHSCOPE_API_KEY` | 百炼模型 API key |
+| `AMAP_API_KEY` | 高德地图 API key |
+| `WEB_SEARCH_PROVIDER` | `duckduckgo` 或 `tavily` |
+| `TAVILY_API_KEY` | Tavily API key |
+| `CACHE_ENABLED` | 是否启用缓存 |
+| `REDIS_URL` | Redis 地址 |
+| `REDIS_CHECKPOINT_ENABLED` | 是否启用 Redis checkpoint |
+| `REQUIRE_API_KEYS` | 是否要求访问本项目后端时鉴权 |
+
+## 测试
+
+运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+当前测试覆盖：
+
+- settings 配置校验；
+- API smoke；
+- LangGraph 路由；
+- Redis 缓存和 checkpoint；
+- 流式事件；
+- Tavily / DuckDuckGo 搜索；
+- 景点、坐标、周边、路线工具。
+
+## 常见问题
+
+### 为什么 DuckDuckGo 搜索不可用？
+
+DuckDuckGo 非官方搜索入口可能返回：
+
+```text
+202 Ratelimit
+```
+
+建议使用 Tavily。
+
+### 为什么会降级到 Web 搜索？
+
+景点主数据源依赖 Selenium + Chrome WebDriver。如果 Chrome 启动失败、页面结构变化或抓取不到景点列表，系统会使用 Web 搜索作为 fallback。
+
+### 为什么 Edge 和 Chrome 页面不一样？
+
+通常是浏览器缓存旧 HTML。使用 `Ctrl + F5` 或无痕窗口重新打开 `http://127.0.0.1:8000/`。
+
+## 安全注意事项
+
+- `.env` 不要提交到 Git；
+- `.env.example` 只能放占位符；
+- 如果 API key 已经出现在截图、聊天或日志里，建议去对应平台轮换。
