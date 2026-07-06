@@ -340,26 +340,7 @@ TAVILY_API_KEY=your_tavily_api_key
 
 Redis 是可选依赖。没启动时缓存和 checkpoint 会降级，但主流程仍可运行。需要持久化会话或减少重复外部查询时，再启动 Redis。
 
-### 前端页面还是旧样式
-
-浏览器可能缓存了旧 HTML。使用：
-
-```text
-Ctrl + F5
-```
-
-或无痕窗口重新打开：
-
-```text
-http://127.0.0.1:8000/
-```
-
 ### 缓存导致结果不符合预期
 
 可清理 Redis 中对应工具缓存后重试。景点 fallback 结果当前不会写入长期缓存。
 
-## 安全提示
-
-- 不要提交 `.env`。
-- 不要把 `DASHSCOPE_API_KEY`、`AMAP_API_KEY`、`TAVILY_API_KEY` 写入文档、前端或日志。
-- 如果 key 已经暴露在聊天、截图或日志中，建议去对应平台轮换。
