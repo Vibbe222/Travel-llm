@@ -19,6 +19,7 @@ def test_settings_defaults_are_development_safe(monkeypatch):
     assert settings.cache_enabled is True
     assert settings.redis_url == "redis://127.0.0.1:6379/0"
     assert settings.redis_checkpoint_enabled is True
+    assert settings.web_search_provider == "duckduckgo"
 
 
 def test_settings_rejects_wildcard_cors_in_production(monkeypatch):
@@ -51,6 +52,13 @@ def test_settings_allows_explicit_development_wildcard_cors(monkeypatch):
     assert settings.cors_origins == ("*",)
 
 
+def test_settings_rejects_unknown_web_search_provider(monkeypatch):
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "unknown")
+
+    with pytest.raises(SettingsError, match="WEB_SEARCH_PROVIDER"):
+        get_settings()
+
+
 def test_env_example_documents_required_configuration():
     content = open(".env.example", encoding="utf-8").read()
 
@@ -69,5 +77,7 @@ def test_env_example_documents_required_configuration():
         "REDIS_CHECKPOINT_TTL_SECONDS",
         "CORS_ORIGINS",
         "LOG_LEVEL",
+        "WEB_SEARCH_PROVIDER",
+        "TAVILY_API_KEY",
     ]:
         assert name in content

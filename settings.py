@@ -9,6 +9,7 @@ from dotenv import find_dotenv, load_dotenv
 TRUTHY_VALUES = {"1", "true", "yes", "y", "on"}
 FALSY_VALUES = {"0", "false", "no", "n", "off"}
 VALID_APP_ENVS = {"development", "testing", "production"}
+VALID_WEB_SEARCH_PROVIDERS = {"duckduckgo", "tavily"}
 
 
 class SettingsError(ValueError):
@@ -77,6 +78,8 @@ class Settings:
     redis_key_prefix: str
     redis_checkpoint_enabled: bool
     redis_checkpoint_ttl_seconds: int
+    web_search_provider: str
+    tavily_api_key: str
 
     @property
     def is_production(self) -> bool:
@@ -129,6 +132,12 @@ class Settings:
         if self.redis_checkpoint_ttl_seconds <= 0:
             errors.append("REDIS_CHECKPOINT_TTL_SECONDS must be greater than 0")
 
+        if self.web_search_provider not in VALID_WEB_SEARCH_PROVIDERS:
+            errors.append(
+                "WEB_SEARCH_PROVIDER must be one of "
+                f"{sorted(VALID_WEB_SEARCH_PROVIDERS)}, got {self.web_search_provider!r}"
+            )
+
         if errors:
             raise SettingsError("; ".join(errors))
 
@@ -166,6 +175,8 @@ def _build_settings() -> Settings:
         redis_key_prefix=_get_env("REDIS_KEY_PREFIX", "travel_llm"),
         redis_checkpoint_enabled=_get_bool("REDIS_CHECKPOINT_ENABLED", True),
         redis_checkpoint_ttl_seconds=_get_int("REDIS_CHECKPOINT_TTL_SECONDS", 604800),
+        web_search_provider=_get_env("WEB_SEARCH_PROVIDER", "duckduckgo").lower(),
+        tavily_api_key=_get_env("TAVILY_API_KEY"),
     )
     settings.validate()
     return settings
