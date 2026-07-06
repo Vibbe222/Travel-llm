@@ -44,6 +44,27 @@ def test_location_cache_hit_skips_external_request(monkeypatch):
     assert result == cached
 
 
+def test_location_cache_hit_ignores_query_limit(monkeypatch):
+    cached = {
+        "success": True,
+        "data": {"source": "amap", "locations": [{"coordinate": "119.296,26.082"}]},
+        "error": None,
+    }
+    monkeypatch.setenv("AMAP_API_KEY", "fake")
+    monkeypatch.setattr(locations, "redis_cache", FakeCache(cached))
+    monkeypatch.setattr(
+        locations,
+        "request_json_with_retry",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("external request should not run")),
+    )
+    locations._LOCATION_QUERY_COUNTER.clear()
+    locations._LOCATION_QUERY_COUNTER["福州::三坊七巷"] = locations.MAX_COORD_QUERY_PER_SPOT
+
+    result = locations.get_location_coordinate.invoke({"location": "三坊七巷", "city": "福州"})
+
+    assert result == cached
+
+
 def test_location_success(monkeypatch):
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     locations._LOCATION_QUERY_COUNTER.clear()

@@ -17,6 +17,11 @@ def get_location_coordinate(
 ) -> dict:
     """位置获取工具。根据地点名称和城市名称获取该地点的经纬度。"""
 
+    cache_key = make_cache_key("location_coordinate", {"location": location, "city": city})
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     key = f"{city.strip()}::{location.strip()}"
     current_count = _LOCATION_QUERY_COUNTER.get(key, 0) + 1
     _LOCATION_QUERY_COUNTER[key] = current_count
@@ -34,11 +39,6 @@ def get_location_coordinate(
 
     if not amap_key:
         return fail("missing_amap_api_key", "缺少 AMAP_API_KEY 环境变量", retryable=False)
-
-    cache_key = make_cache_key("location_coordinate", {"location": location, "city": city})
-    cached = redis_cache.get_json(cache_key)
-    if cached is not None:
-        return cached
 
     base_url = "https://restapi.amap.com/v3/geocode/geo"
     params = {
