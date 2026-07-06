@@ -1,17 +1,15 @@
-import os
 from langchain_core.tools import tool
-from typing import Annotated, List, Dict
+from typing import Annotated
 import requests
-import json
-from dotenv import load_dotenv, find_dotenv
+
+from settings import get_settings
 
 @tool
 def get_location_coordinate(
     location: Annotated[str, "要获取地图的地点的坐标，以“,”分割，经度在前，纬度在后，如117.500244,40.417801"],
 ):
     """地图获取工具，根据输入的地点经纬度返回地图图片"""
-    _ = load_dotenv(find_dotenv())
-    amap_key = os.getenv("AMAP_API_KEY")
+    amap_key = get_settings().amap_api_key
     base_url = "https://restapi.amap.com/v3/staticmap?"
     url = f"{base_url}key={amap_key}&location={location}&zoom=10"
     r = requests.get(url)

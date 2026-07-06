@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from chat_service import DEFAULT_MODEL_NAME, build_config, create_session, iter_chat_event_lines
+from settings import get_settings
 
 # `BASE_DIR` 是项目根目录，`INDEX_FILE` 指向首页 HTML 文件。
 # 这样不管从哪里启动程序，都能稳定找到 `templates/index.html`。
@@ -29,18 +30,19 @@ INDEX_FILE = BASE_DIR / "templates" / "index.html"
 # `app` 是整个 FastAPI 应用的核心对象。
 # 后面定义的接口、文档、配置，都会挂在这个对象上。
 app = FastAPI(title="Travel Planner API")
+settings = get_settings()
 
 # 这里添加跨域中间件。
-# 当前配置基本是“全部放开”：
-# - 允许任意来源访问
-# - 允许携带凭证
+# 允许来源从 settings.CORS_ORIGINS 读取：
+# - 本地开发默认允许 localhost / 127.0.0.1 常见端口
+# - 生产环境禁止使用通配符 "*"
 # - 允许任意 HTTP 方法
 # - 允许任意请求头
-# 这种写法对本地前后端联调很方便，但生产环境通常会收紧范围。
+# 具体配置请参考 .env.example。
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=list(settings.cors_origins),
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

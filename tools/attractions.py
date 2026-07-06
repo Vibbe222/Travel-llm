@@ -4,7 +4,6 @@ from typing import Annotated
 from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
-from dotenv import find_dotenv, load_dotenv
 from langchain_core.tools import tool
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
@@ -14,8 +13,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tools.base import fail, get_tool_logger, ok
+from utils.redis_cache import make_cache_key, redis_cache
 
 MAX_SCENIC_SPOTS = 5
+
+
+def _cache_if_primary_source(cache_key: str, result: dict) -> None:
+    data = result.get("data") if isinstance(result, dict) else None
+    if result.get("success") and isinstance(data, dict) and data.get("source") == "mafengwo":
+        redis_cache.set_json(cache_key, result)
 
 
 def InitWebDriver():
@@ -179,10 +185,13 @@ def get_attractions_information(
 ) -> dict:
     """景点搜索工具。获取目的地概览和景点信息列表。"""
 
-    _ = load_dotenv(find_dotenv())
     logger = get_tool_logger("get_attractions_information")
     started_at = time.perf_counter()
     driver = None
+    cache_key = make_cache_key("attractions", {"destination": destination})
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         driver = InitWebDriver()
@@ -199,7 +208,8 @@ def get_attractions_information(
                 destination,
                 reason,
             )
-            return _fallback_with_web_search(destination, reason)
+            result = _fallback_with_web_search(destination, reason)
+            return result
 
         destination_page = fetch_page_with_selenium(driver, destination_url)
         destination_soup = BeautifulSoup(destination_page, "html.parser")
@@ -214,7 +224,8 @@ def get_attractions_information(
                 destination,
                 reason,
             )
-            return _fallback_with_web_search(destination, reason)
+            result = _fallback_with_web_search(destination, reason)
+            return result
 
         elapsed_ms = int((time.perf_counter() - started_at) * 1000)
         logger.info(
@@ -223,13 +234,15 @@ def get_attractions_information(
             len(scenic_spots),
             elapsed_ms,
         )
-        return ok({
+        result = ok({
             "source": "mafengwo",
             "fallback_used": False,
             "warnings": [],
             "overview": overview,
             "scenic_list": scenic_spots,
         })
+        _cache_if_primary_source(cache_key, result)
+        return result
     except (TimeoutException, WebDriverException) as exc:
         reason = f"{exc.__class__.__name__}: {str(exc)[:160]}"
         logger.warning(
@@ -237,7 +250,8 @@ def get_attractions_information(
             destination,
             reason,
         )
-        return _fallback_with_web_search(destination, reason)
+        result = _fallback_with_web_search(destination, reason)
+        return result
     finally:
         if driver is not None:
             try:

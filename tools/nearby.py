@@ -1,10 +1,10 @@
-import os
 from typing import Annotated
 
-from dotenv import find_dotenv, load_dotenv
 from langchain_core.tools import tool
 
+from settings import get_settings
 from tools.base import fail, ok, request_json_with_retry
+from utils.redis_cache import make_cache_key, redis_cache
 
 
 @tool
@@ -18,7 +18,6 @@ def search_nearby_poi(
     page: Annotated[int, "当前页数。"] = 1,
 ) -> dict:
     """周边搜索工具。根据中心点坐标和关键字或POI类型搜索周边POI。返回结果中，距离的单位都是米，费用的单位都是元。"""
-    _ = load_dotenv(find_dotenv())
 
     if keyword == "" and types == "":
         return fail(
@@ -27,9 +26,23 @@ def search_nearby_poi(
             retryable=False,
         )
 
-    amap_key = os.getenv("AMAP_API_KEY")
+    amap_key = get_settings().amap_api_key
     if not amap_key:
         return fail("missing_amap_api_key", "缺少 AMAP_API_KEY 环境变量", retryable=False)
+
+    cache_payload = {
+        "location": location,
+        "city": city,
+        "types": types,
+        "keyword": keyword,
+        "radius": radius,
+        "offset": offset,
+        "page": page,
+    }
+    cache_key = make_cache_key("nearby_poi", cache_payload)
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
 
     base_url = "https://restapi.amap.com/v3/place/around"
     params = {
@@ -95,7 +108,9 @@ def search_nearby_poi(
             "rating": biz_ext.get("rating") or "not available",
             "cost": biz_ext.get("cost") or "not available",
         })
-    return ok(nearby_search_result)
+    result = ok(nearby_search_result)
+    redis_cache.set_json(cache_key, result)
+    return result
 
 
 if __name__ == "__main__":

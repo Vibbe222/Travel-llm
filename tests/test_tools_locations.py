@@ -1,9 +1,20 @@
 from tools import locations
 
 
+class FakeCache:
+    def __init__(self, value):
+        self.value = value
+        self.set_calls = []
+
+    def get_json(self, _key):
+        return self.value
+
+    def set_json(self, key, value, ttl_seconds=None):
+        self.set_calls.append((key, value, ttl_seconds))
+
+
 def test_location_missing_api_key(monkeypatch):
-    monkeypatch.setattr(locations, "load_dotenv", lambda *_args, **_kwargs: None)
-    monkeypatch.delenv("AMAP_API_KEY", raising=False)
+    monkeypatch.setenv("AMAP_API_KEY", "")
     locations._LOCATION_QUERY_COUNTER.clear()
 
     result = locations.get_location_coordinate.invoke({"location": "三坊七巷", "city": "福州"})
@@ -13,8 +24,27 @@ def test_location_missing_api_key(monkeypatch):
     assert result["error"]["retryable"] is False
 
 
+def test_location_cache_hit_skips_external_request(monkeypatch):
+    cached = {
+        "success": True,
+        "data": {"source": "amap", "locations": [{"coordinate": "119.296,26.082"}]},
+        "error": None,
+    }
+    monkeypatch.setenv("AMAP_API_KEY", "fake")
+    monkeypatch.setattr(locations, "redis_cache", FakeCache(cached))
+    monkeypatch.setattr(
+        locations,
+        "request_json_with_retry",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("external request should not run")),
+    )
+    locations._LOCATION_QUERY_COUNTER.clear()
+
+    result = locations.get_location_coordinate.invoke({"location": "三坊七巷", "city": "福州"})
+
+    assert result == cached
+
+
 def test_location_success(monkeypatch):
-    monkeypatch.setattr(locations, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     locations._LOCATION_QUERY_COUNTER.clear()
 
@@ -44,7 +74,6 @@ def test_location_success(monkeypatch):
 
 
 def test_location_business_error(monkeypatch):
-    monkeypatch.setattr(locations, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     locations._LOCATION_QUERY_COUNTER.clear()
     monkeypatch.setattr(
@@ -61,7 +90,6 @@ def test_location_business_error(monkeypatch):
 
 
 def test_location_empty_result(monkeypatch):
-    monkeypatch.setattr(locations, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     locations._LOCATION_QUERY_COUNTER.clear()
     monkeypatch.setattr(
@@ -78,7 +106,6 @@ def test_location_empty_result(monkeypatch):
 
 
 def test_location_propagates_network_timeout(monkeypatch):
-    monkeypatch.setattr(locations, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     locations._LOCATION_QUERY_COUNTER.clear()
     monkeypatch.setattr(

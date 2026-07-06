@@ -55,6 +55,10 @@ class StageExecutor:
                 parsed = safe_json_loads(content)
                 if parsed is not None:
                     return parsed
+                if self.fallback is not None:
+                    fallback_data = self.fallback(state)
+                    fallback_data.setdefault("fallback_reason", "json_parse_failed")
+                    return fallback_data
 
             return {"content": content}
         except Exception as exc:
@@ -79,4 +83,5 @@ def _json_safe(value: Any) -> Any:
         return _json_safe(getattr(value, "content", ""))
 
     return str(value)
+
 

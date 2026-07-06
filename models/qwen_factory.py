@@ -1,27 +1,24 @@
-import os
-
 from langchain_openai import ChatOpenAI
+
+from settings import get_settings
 
 
 class QwenLLMFactory:
-    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    DEFAULT_MODEL = "deepseek-v4-flash"
-
     @staticmethod
     def get_llm(model=None, temperature=None):
         if temperature is None:
             raise ValueError("Parameter 'temperature' must be specified.")
 
-        api_key = os.getenv("DASHSCOPE_API_KEY")
-        if not api_key:
+        settings = get_settings()
+        if not settings.dashscope_api_key:
             raise ValueError(
                 "Missing DASHSCOPE_API_KEY. Please set DASHSCOPE_API_KEY in your .env file."
             )
 
         return ChatOpenAI(
-            model=model or QwenLLMFactory.DEFAULT_MODEL,
+            model=model or settings.model_name,
             temperature=temperature,
             streaming=True,
-            api_key=api_key,
-            base_url=QwenLLMFactory.BASE_URL,
+            api_key=settings.dashscope_api_key,
+            base_url=settings.dashscope_base_url,
         )

@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage
 from graph.graph import create_graph
 from graph.nodes import (
     AttractionCollectorNode,
+    ClarificationResponderNode,
     PoiEnricherNode,
     TransportValidatorNode,
     _build_fallback_daily_plan,
@@ -105,13 +106,24 @@ def test_structured_state_contains_phase_three_fields():
 
 
 def test_workflow_routes():
-    assert route_after_intent({"needs_clarification": True}) == "destination_clarifier"
+    assert route_after_intent({"needs_clarification": True}) == "clarification_responder"
     assert route_after_intent({"selected_destination": "福州"}) == "attraction_collector"
     assert route_after_intent({"intent_type": "confirm", "daily_plan": [{"day": 1}]}) == "final_responder"
     assert route_after_destination({"selected_destination": "福州"}) == "attraction_collector"
     assert route_after_destination({}) == "final_responder"
     assert route_after_transport({"needs_replan": True, "replan_attempts": 1}) == "itinerary_planner"
     assert route_after_transport({"needs_replan": True, "replan_attempts": 2}) == "poi_enricher"
+
+
+@pytest.mark.anyio
+async def test_clarification_responder_asks_for_destination_without_tools():
+    node = ClarificationResponderNode()
+
+    result = await node({"messages": [HumanMessage(content="帮我规划两天轻松游")]})
+
+    assert result["final_status"] == "need_destination"
+    assert result["needs_clarification"] is True
+    assert "请补充你想去的城市或地区" in result["messages"][0].content
 
 
 def test_create_graph_compiles_without_initializing_llm():

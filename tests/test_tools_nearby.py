@@ -13,7 +13,6 @@ def test_nearby_invalid_query_returns_fail():
 
 
 def test_nearby_success(monkeypatch):
-    monkeypatch.setattr(nearby, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
 
     def fake_request_json_with_retry(**_kwargs):
@@ -49,7 +48,6 @@ def test_nearby_success(monkeypatch):
 
 
 def test_nearby_empty_result(monkeypatch):
-    monkeypatch.setattr(nearby, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         nearby,
@@ -68,8 +66,7 @@ def test_nearby_empty_result(monkeypatch):
 
 
 def test_nearby_missing_api_key(monkeypatch):
-    monkeypatch.setattr(nearby, "load_dotenv", lambda *_args, **_kwargs: None)
-    monkeypatch.delenv("AMAP_API_KEY", raising=False)
+    monkeypatch.setenv("AMAP_API_KEY", "")
 
     result = nearby.search_nearby_poi.invoke({
         "location": "113.129362,29.371356",
@@ -83,7 +80,6 @@ def test_nearby_missing_api_key(monkeypatch):
 
 
 def test_nearby_business_error(monkeypatch):
-    monkeypatch.setattr(nearby, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         nearby,
@@ -103,7 +99,6 @@ def test_nearby_business_error(monkeypatch):
 
 
 def test_nearby_propagates_network_timeout(monkeypatch):
-    monkeypatch.setattr(nearby, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         nearby,

@@ -2,6 +2,7 @@ from typing import Literal
 
 
 def route_after_intent(state) -> Literal[
+    "clarification_responder",
     "destination_clarifier",
     "attraction_collector",
     "itinerary_planner",
@@ -11,7 +12,7 @@ def route_after_intent(state) -> Literal[
         return "final_responder"
 
     if state.get("needs_clarification"):
-        return "destination_clarifier"
+        return "clarification_responder"
 
     if state.get("selected_destination") and state.get("attractions"):
         return "itinerary_planner"

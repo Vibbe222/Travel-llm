@@ -32,6 +32,7 @@ def build_nodes(model_name: str, tools: ToolBundle | None = None) -> dict[str, A
     tool_bundle = tools or ToolBundle()
     return {
         "intent_router": IntentRouterNode(model_name),
+        "clarification_responder": ClarificationResponderNode(),
         "destination_clarifier": DestinationClarifierNode(model_name, tool_bundle),
         "attraction_collector": AttractionCollectorNode(tool_bundle),
         "itinerary_planner": ItineraryPlannerNode(model_name),
@@ -144,6 +145,24 @@ class DestinationClarifierNode:
             "validation_issues": validation_issues,
             "final_status": "clarified" if selected_destination else "need_user_input",
             "messages": [AIMessage(content=response_message)] if candidate_destinations else [],
+        }
+
+
+class ClarificationResponderNode:
+    async def __call__(self, state: dict[str, Any]) -> dict[str, Any]:
+        validation_issues = list(state.get("validation_issues", []))
+        return {
+            "messages": [
+                AIMessage(
+                    content=(
+                        "我还没有识别出明确目的地。请补充你想去的城市或地区，"
+                        "例如“福州两天”“杭州周末游”。"
+                    )
+                )
+            ],
+            "needs_clarification": True,
+            "validation_issues": validation_issues,
+            "final_status": "need_destination",
         }
 
 

@@ -2,7 +2,6 @@ from tools import transportation
 
 
 def test_route_success_with_warning_for_empty_transits(monkeypatch):
-    monkeypatch.setattr(transportation, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
 
     monkeypatch.setattr(
@@ -37,7 +36,6 @@ def test_route_success_with_warning_for_empty_transits(monkeypatch):
 
 
 def test_route_business_error(monkeypatch):
-    monkeypatch.setattr(transportation, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         transportation,
@@ -58,8 +56,7 @@ def test_route_business_error(monkeypatch):
 
 
 def test_route_missing_api_key(monkeypatch):
-    monkeypatch.setattr(transportation, "load_dotenv", lambda *_args, **_kwargs: None)
-    monkeypatch.delenv("AMAP_API_KEY", raising=False)
+    monkeypatch.setenv("AMAP_API_KEY", "")
 
     result = transportation.route_planning.invoke({
         "origin": "113.1,29.3",
@@ -74,7 +71,6 @@ def test_route_missing_api_key(monkeypatch):
 
 
 def test_route_invalid_schema(monkeypatch):
-    monkeypatch.setattr(transportation, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         transportation,
@@ -95,7 +91,6 @@ def test_route_invalid_schema(monkeypatch):
 
 
 def test_route_propagates_network_timeout(monkeypatch):
-    monkeypatch.setattr(transportation, "load_dotenv", lambda *_args, **_kwargs: None)
     monkeypatch.setenv("AMAP_API_KEY", "fake")
     monkeypatch.setattr(
         transportation,

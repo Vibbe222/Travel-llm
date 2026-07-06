@@ -7,6 +7,7 @@ from duckduckgo_search.exceptions import DuckDuckGoSearchException
 from langchain_core.tools import tool
 
 from tools.base import fail, get_tool_logger, ok
+from utils.redis_cache import make_cache_key, redis_cache
 
 
 @tool
@@ -17,6 +18,11 @@ def web_search(
     """网络搜索工具。在搜索引擎上搜索关键词，返回结果列表。"""
 
     logger = get_tool_logger("web_search")
+    cache_key = make_cache_key("web_search", {"keywords": keywords, "max_results": max_results})
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     max_attempts = 3
     backoffs = [1, 2]
     last_error = ""
@@ -47,11 +53,13 @@ def web_search(
                 elapsed_ms,
                 {"max_results": max_results, "keyword_length": len(keywords)},
             )
-            return ok({
+            result = ok({
                 "source": "duckduckgo",
                 "fallback_used": False,
                 "results": results,
             })
+            redis_cache.set_json(cache_key, result)
+            return result
         except (DuckDuckGoSearchException, requests.exceptions.Timeout, TimeoutError, requests.exceptions.ConnectionError) as exc:
             last_error = str(exc)
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)

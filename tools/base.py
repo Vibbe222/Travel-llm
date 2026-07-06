@@ -1,12 +1,15 @@
 import logging
-import os
 import time
 from typing import Any
 
 import requests
 
-DEFAULT_TIMEOUT_SECONDS = 12
-DEFAULT_MAX_RETRIES = 2
+from settings import get_settings
+
+_settings = get_settings()
+
+DEFAULT_TIMEOUT_SECONDS = _settings.request_timeout_seconds
+DEFAULT_MAX_RETRIES = _settings.max_retries
 DEFAULT_BACKOFF_SECONDS = (1, 2)
 RETRYABLE_HTTP_STATUS = {429, 500, 502, 503, 504}
 RETRYABLE_REQUEST_EXCEPTIONS = (
@@ -40,7 +43,7 @@ def fail(message: str, detail: Any = None, retryable: bool = False) -> dict[str,
 
 def configure_logging_from_env() -> None:
     global _LOGGING_CONFIGURED
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level_name = get_settings().log_level
     level = getattr(logging, level_name, logging.INFO)
 
     if not _LOGGING_CONFIGURED:

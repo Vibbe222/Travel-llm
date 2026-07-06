@@ -1,10 +1,10 @@
-import os
 from typing import Annotated
 
-from dotenv import find_dotenv, load_dotenv
 from langchain_core.tools import tool
 
+from settings import get_settings
 from tools.base import fail, ok, request_json_with_retry
+from utils.redis_cache import make_cache_key, redis_cache
 
 
 @tool
@@ -15,10 +15,20 @@ def route_planning(
     dest_city_code: Annotated[str, "目的地所在的城市编码。"],
 ) -> dict:
     """路线规划工具。规划综合各类公共交通方式（火车、公交、地铁）的交通方案，返回从出发点到目的地的步行距离、出租车费用以及公共交通方案列表。返回结果中，距离的单位都是米，时间的单位都是秒，费用的单位都是元。如果返回的公共交通方案列表为空，说明两个地点之间没有可用的公共交通方式。"""
-    _ = load_dotenv(find_dotenv())
-    amap_key = os.getenv("AMAP_API_KEY")
+    amap_key = get_settings().amap_api_key
     if not amap_key:
         return fail("missing_amap_api_key", "缺少 AMAP_API_KEY 环境变量", retryable=False)
+
+    cache_payload = {
+        "origin": origin,
+        "destination": destination,
+        "origin_city_code": origin_city_code,
+        "dest_city_code": dest_city_code,
+    }
+    cache_key = make_cache_key("route_planning", cache_payload)
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
 
     base_url = "https://restapi.amap.com/v3/direction/transit/integrated"
     params = {
@@ -76,7 +86,9 @@ def route_planning(
             "duration": item.get("duration", ""),
             "walking_distance": item.get("walking_distance", ""),
         })
-    return ok(routes)
+    result = ok(routes)
+    redis_cache.set_json(cache_key, result)
+    return result
 
 
 if __name__ == "__main__":

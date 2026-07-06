@@ -116,3 +116,39 @@ def test_attractions_fallback_failure_is_explicit(monkeypatch):
     assert result["success"] is False
     assert result["error"]["message"] == "attractions_fallback_failed"
     assert result["error"]["retryable"] is True
+
+
+def test_attractions_fallback_is_not_cached(monkeypatch):
+    cached_values = []
+    monkeypatch.setattr(attractions.redis_cache, "set_json", lambda key, value: cached_values.append((key, value)))
+
+    result = {
+        "success": True,
+        "data": {
+            "source": "web_search_fallback",
+            "fallback_used": True,
+        },
+        "error": None,
+    }
+
+    attractions._cache_if_primary_source("cache-key", result)
+
+    assert cached_values == []
+
+
+def test_attractions_primary_source_is_cached(monkeypatch):
+    cached_values = []
+    monkeypatch.setattr(attractions.redis_cache, "set_json", lambda key, value: cached_values.append((key, value)))
+
+    result = {
+        "success": True,
+        "data": {
+            "source": "mafengwo",
+            "fallback_used": False,
+        },
+        "error": None,
+    }
+
+    attractions._cache_if_primary_source("cache-key", result)
+
+    assert cached_values == [("cache-key", result)]

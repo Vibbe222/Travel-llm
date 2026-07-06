@@ -1,10 +1,10 @@
-import os
 from typing import Annotated, Dict, List
 
-from dotenv import find_dotenv, load_dotenv
 from langchain_core.tools import tool
 
+from settings import get_settings
 from tools.base import fail, ok, request_json_with_retry
+from utils.redis_cache import make_cache_key, redis_cache
 
 MAX_COORD_QUERY_PER_SPOT = 3
 _LOCATION_QUERY_COUNTER: Dict[str, int] = {}
@@ -30,11 +30,15 @@ def get_location_coordinate(
             retryable=False,
         )
 
-    _ = load_dotenv(find_dotenv())
-    amap_key = os.getenv("AMAP_API_KEY")
+    amap_key = get_settings().amap_api_key
 
     if not amap_key:
         return fail("missing_amap_api_key", "缺少 AMAP_API_KEY 环境变量", retryable=False)
+
+    cache_key = make_cache_key("location_coordinate", {"location": location, "city": city})
+    cached = redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
 
     base_url = "https://restapi.amap.com/v3/geocode/geo"
     params = {
@@ -72,11 +76,13 @@ def get_location_coordinate(
             "citycode": item.get("citycode", ""),
         })
 
-    return ok({
+    result = ok({
         "source": "amap",
         "fallback_used": False,
         "locations": location_coordinates,
     })
+    redis_cache.set_json(cache_key, result)
+    return result
 
 
 if __name__ == "__main__":
