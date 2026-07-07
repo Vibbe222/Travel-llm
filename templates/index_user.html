@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>旅游规划机器人</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --panel-soft: #f4f7fb;
+      --line: #d8dee8;
+      --text: #172033;
+      --muted: #667085;
+      --accent: #0f766e;
+      --accent-dark: #115e59;
+      --user: #e8f1ff;
+      --warning-bg: #fff7d6;
+      --warning-line: #e8c34a;
+      --error-bg: #fff1f2;
+      --error-line: #f0a5ad;
+      --code-bg: #eef2f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    button,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      min-height: 36px;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .top-actions,
+    .row-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .sidebar,
+    .chat-panel,
+    .inspect-panel {
+      min-height: 0;
+      background: var(--panel);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--line);
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .chat-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .inspect-panel {
+      display: none;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .section-note,
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .session-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .session-item {
+      width: 100%;
+      min-height: 56px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .session-item.active {
+      border-color: var(--accent);
+      background: #eefaf8;
+    }
+
+    .session-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .session-id {
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px;
+      overflow: auto;
+      background: var(--panel-soft);
+    }
+
+    .message {
+      width: min(88%, 860px);
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      line-height: 1.6;
+      background: #fff;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--user);
+      border-color: #bad3ff;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+    }
+
+    .message-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .message-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .process-box,
+    .degradation-box,
+    .error-box {
+      margin: 8px 0 10px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .process-box {
+      border: 1px solid #c7d2fe;
+      background: #eef2ff;
+    }
+
+    .progress-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .progress-list li {
+      color: #344054;
+    }
+
+    .degradation-box {
+      border: 1px solid var(--warning-line);
+      background: var(--warning-bg);
+    }
+
+    .error-box {
+      border: 1px solid var(--error-line);
+      background: var(--error-bg);
+    }
+
+    details {
+      margin-top: 8px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--accent-dark);
+      font-weight: 700;
+    }
+
+    pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      overflow: auto;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: #344054;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 12px;
+    }
+
+    .message-markdown h1,
+    .message-markdown h2,
+    .message-markdown h3,
+    .message-markdown h4 {
+      margin: 0.8em 0 0.4em;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .message-markdown h1:first-child,
+    .message-markdown h2:first-child,
+    .message-markdown h3:first-child {
+      margin-top: 0;
+    }
+
+    .message-markdown p {
+      margin: 0.55em 0;
+    }
+
+    .message-markdown ul,
+    .message-markdown ol {
+      margin: 0.55em 0;
+      padding-left: 1.35em;
+    }
+
+    .message-markdown code {
+      padding: 0.15em 0.35em;
+      border-radius: 6px;
+      background: var(--code-bg);
+      font-family: "Consolas", "SFMono-Regular", monospace;
+      font-size: 0.92em;
+    }
+
+    .message-markdown pre code {
+      padding: 0;
+      background: transparent;
+    }
+
+    .composer {
+      padding: 14px 16px 16px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 86px;
+      max-height: 240px;
+      resize: vertical;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      outline: none;
+      background: #fff;
+    }
+
+    .composer textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .button {
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-weight: 700;
+      color: white;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .button:hover:not(:disabled) {
+      background: var(--accent-dark);
+    }
+
+    .button.secondary {
+      color: var(--text);
+      border-color: var(--line);
+      background: #fff;
+    }
+
+    .button.danger {
+      border-color: #d92d20;
+      background: #d92d20;
+    }
+
+    .button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .inspect-body {
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .panel-block {
+      margin-bottom: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .block-title {
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .block-body {
+      padding: 10px 12px;
+    }
+
+    .debug-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .debug-item {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+
+    .debug-item strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #7a4d00;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 1120px) {
+      .workspace {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .inspect-panel {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--line);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar,
+      .section-head,
+      .row-actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar,
+      .chat-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .message {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>旅游规划机器人</h1>
+        <p>Thread ID: {{ threadId || '正在创建会话...' }} · {{ isLoading ? '正在生成' : '已就绪' }}</p>
+      </div>
+      <div class="top-actions">
+        <button class="button secondary" @click="newSession" :disabled="isCreatingSession">新建会话</button>
+        <button class="button secondary" @click="exportCurrentSession" :disabled="messages.length === 0">导出当前</button>
+        <button class="button secondary" @click="exportAllSessions" :disabled="sessions.length === 0">导出历史</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="section-title">历史会话</div>
+        <div class="section-note">保存在当前浏览器本地</div>
+        <div class="session-list">
+          <button
+            v-for="session in sessions"
+            :key="session.threadId"
+            class="session-item"
+            :class="{ active: session.threadId === threadId }"
+            @click="loadSession(session.threadId)"
+          >
+            <div class="session-title">{{ session.title || '新会话' }}</div>
+            <div class="session-id">{{ formatTime(session.updatedAt) }} · {{ session.threadId }}</div>
+          </button>
+          <div v-if="sessions.length === 0" class="empty">暂无历史会话。</div>
+        </div>
+      </aside>
+
+      <section class="chat-panel">
+        <div class="section-head">
+          <div>
+            <div class="section-title">聊天对话</div>
+            <div class="section-note">生成时会先显示进度，再流式补全文本</div>
+          </div>
+          <div class="row-actions">
+            <button class="button danger" v-if="isLoading" @click="stopGeneration">停止生成</button>
+          </div>
+        </div>
+
+        <div class="messages" ref="messagePanel">
+          <div v-if="messages.length === 0" class="empty">
+            可以先试试：“帮我规划一个周末去杭州的两天行程”。
+          </div>
+
+          <div
+            v-for="message in messages"
+            :key="message.id"
+            class="message"
+            :class="message.role"
+          >
+            <div class="message-label">
+              <span>{{ message.role === 'user' ? '用户' : '助手' }}</span>
+              <span v-if="message.stopped">已停止</span>
+            </div>
+
+            <template v-if="message.role === 'assistant'">
+              <div v-if="message.progress && message.progress.length" class="process-box">
+                <ul class="progress-list">
+                  <li v-for="item in message.progress" :key="item.id">{{ item.message }}</li>
+                </ul>
+              </div>
+
+              <div
+                v-for="item in message.errors || []"
+                :key="item.id"
+                class="error-box"
+              >
+                <strong>提示</strong>
+                <div>{{ item.userMessage }}</div>
+              </div>
+
+              <div v-if="message.content" class="message-markdown" v-html="renderMarkdown(message.content)"></div>
+              <div v-else-if="!isLoading" class="message-text">暂无回复内容。</div>
+            </template>
+
+            <div v-else class="message-text">{{ message.content }}</div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <textarea
+            v-model="draft"
+            placeholder="输入你的旅行需求，例如：我想五一去成都玩3天，偏美食和轻松路线。"
+            @keydown.enter.exact.prevent="sendMessage"
+          ></textarea>
+          <div class="row-actions" style="margin-top: 10px;">
+            <div class="meta">Shift + Enter 换行，Enter 发送</div>
+            <button class="button" :disabled="isLoading || !draft.trim() || !threadId" @click="sendMessage">
+              {{ isLoading ? '生成中...' : '发送' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    const { createApp, nextTick } = Vue;
+    const STORAGE_KEY = "travelPlannerSessions:user:v1";
+
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+    });
+
+    createApp({
+      data() {
+        return {
+          threadId: "",
+          draft: "",
+          isLoading: false,
+          isCreatingSession: false,
+          messages: [],
+          debugLogs: [],
+          sessions: [],
+          toolsCollapsed: false,
+          abortController: null,
+          currentAssistantId: null,
+          nextMessageId: 1,
+          nextDebugId: 1,
+          nextProcessId: 1,
+        };
+      },
+      computed: {
+        currentAssistant() {
+          if (!this.currentAssistantId) {
+            return [...this.messages].reverse().find((item) => item.role === "assistant") || null;
+          }
+          return this.messages.find((item) => item.id === this.currentAssistantId) || null;
+        },
+      },
+      async mounted() {
+        this.restoreSessions();
+        if (this.sessions.length > 0) {
+          this.loadSession(this.sessions[0].threadId);
+        } else {
+          await this.newSession();
+        }
+      },
+      methods: {
+        async createSessionId() {
+          const response = await fetch("/sessions", { method: "POST" });
+          if (!response.ok) {
+            throw new Error(await response.text() || `HTTP ${response.status}`);
+          }
+          const data = await response.json();
+          return data.thread_id;
+        },
+        async newSession() {
+          if (this.isLoading) {
+            this.stopGeneration();
+          }
+          this.isCreatingSession = true;
+          try {
+            const threadId = await this.createSessionId();
+            this.threadId = threadId;
+            this.draft = "";
+            this.messages = [];
+            this.debugLogs = [];
+            this.currentAssistantId = null;
+            this.nextMessageId = 1;
+            this.nextDebugId = 1;
+            this.nextProcessId = 1;
+            this.upsertSession("新会话");
+            this.persistSessions();
+          } catch (error) {
+            this.appendDebug("创建会话失败", error?.message || String(error));
+          } finally {
+            this.isCreatingSession = false;
+          }
+        },
+        loadSession(threadId) {
+          if (this.isLoading) {
+            return;
+          }
+          const session = this.sessions.find((item) => item.threadId === threadId);
+          if (!session) {
+            return;
+          }
+          this.threadId = session.threadId;
+          this.messages = this.clone(session.messages || []);
+          this.debugLogs = this.clone(session.debugLogs || []);
+          this.nextMessageId = this.nextIdFrom(this.messages);
+          this.nextDebugId = this.nextIdFrom(this.debugLogs);
+          this.nextProcessId = this.nextProcessIdFromMessages();
+          const lastAssistant = [...this.messages].reverse().find((item) => item.role === "assistant");
+          this.currentAssistantId = lastAssistant ? lastAssistant.id : null;
+        },
+        restoreSessions() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            this.sessions = raw ? JSON.parse(raw) : [];
+          } catch (_error) {
+            this.sessions = [];
+          }
+        },
+        persistSessions() {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(this.sessions.slice(0, 20)));
+        },
+        upsertSession(title) {
+          if (!this.threadId) {
+            return;
+          }
+          const existingIndex = this.sessions.findIndex((item) => item.threadId === this.threadId);
+          const session = {
+            threadId: this.threadId,
+            title: title || this.sessionTitle(),
+            updatedAt: new Date().toISOString(),
+            messages: this.clone(this.messages),
+            debugLogs: this.clone(this.debugLogs),
+          };
+          if (existingIndex >= 0) {
+            this.sessions.splice(existingIndex, 1);
+          }
+          this.sessions.unshift(session);
+          this.persistSessions();
+        },
+        addMessage(role, content) {
+          const id = this.nextMessageId++;
+          const message = {
+            id,
+            role,
+            content,
+            progress: [],
+            degradations: [],
+            errors: [],
+            stopped: false,
+          };
+          this.messages.push(message);
+          this.upsertSession();
+          return id;
+        },
+        updateAssistant(assistantId, patcher) {
+          this.messages = this.messages.map((item) => {
+            if (item.id !== assistantId) {
+              return item;
+            }
+            const clone = { ...item };
+            patcher(clone);
+            return clone;
+          });
+          this.upsertSession();
+        },
+        appendProgress(assistantId, message, stage) {
+          this.updateAssistant(assistantId, (item) => {
+            const last = item.progress[item.progress.length - 1];
+            if (last && last.message === message) {
+              return;
+            }
+            item.progress = [
+              ...item.progress,
+              { id: this.nextProcessId++, message, stage: stage || "" },
+            ];
+          });
+        },
+        appendDegradation(assistantId, event) {
+          this.updateAssistant(assistantId, (item) => {
+            item.degradations = [
+              ...item.degradations,
+              {
+                id: this.nextProcessId++,
+                component: event.component || "",
+                reason: event.reason || "系统使用了降级数据。",
+                impact: event.impact || "当前结果可能不完整。",
+                confidence: event.confidence || "中等",
+                debug: event.debug || null,
+                raw: event.raw || null,
+              },
+            ];
+          });
+        },
+        appendError(assistantId, event) {
+          this.updateAssistant(assistantId, (item) => {
+            item.errors = [
+              ...item.errors,
+              {
+                id: this.nextProcessId++,
+                userMessage: event.user_message || event.userMessage || "生成过程中遇到临时问题，请稍后重试。",
+                debug: null,
+                raw: null,
+              },
+            ];
+            if (!item.content) {
+              item.content = "本次生成未能完整完成，可以稍后重试。";
+            }
+          });
+        },
+        appendDebug(title, content) {
+          this.debugLogs.unshift({
+            id: this.nextDebugId++,
+            title,
+            content: typeof content === "string" ? content : JSON.stringify(content, null, 2),
+          });
+          this.upsertSession();
+        },
+        renderMarkdown(content) {
+          const rawHtml = marked.parse(content || "");
+          return DOMPurify.sanitize(rawHtml);
+        },
+        async sendMessage() {
+          if (this.isLoading || !this.draft.trim() || !this.threadId) {
+            return;
+          }
+
+          const userText = this.draft.trim();
+          this.draft = "";
+          this.isLoading = true;
+          this.abortController = new AbortController();
+
+          this.addMessage("user", userText);
+          const assistantId = this.addMessage("assistant", "");
+          this.currentAssistantId = assistantId;
+          this.appendProgress(assistantId, "已发送请求，等待服务端响应", "client");
+
+          try {
+            const response = await fetch("/chat/stream", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: this.abortController.signal,
+              body: JSON.stringify({
+                thread_id: this.threadId,
+                message: userText,
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(errorText || `HTTP ${response.status}`);
+            }
+
+            if (!response.body) {
+              throw new Error("响应未返回可读取的流。");
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                this.handleEvent(assistantId, JSON.parse(line));
+              }
+            }
+
+            if (buffer.trim()) {
+              this.handleEvent(assistantId, JSON.parse(buffer));
+            }
+          } catch (error) {
+            const isAbort = error?.name === "AbortError";
+            if (isAbort) {
+              this.updateAssistant(assistantId, (item) => {
+                item.stopped = true;
+                if (!item.content) {
+                  item.content = "已停止生成。";
+                }
+              });
+              this.appendProgress(assistantId, "已停止生成", "client");
+            } else {
+              this.appendError(assistantId, {
+                user_message: `请求失败：${error?.message || String(error)}`,
+                debug: { source: "frontend_fetch" },
+              });
+              this.appendDebug("请求失败", error?.message || String(error));
+            }
+          } finally {
+            this.isLoading = false;
+            this.abortController = null;
+            this.upsertSession(this.sessionTitle());
+            await nextTick();
+            this.scrollMessagesToBottom();
+          }
+        },
+        stopGeneration() {
+          if (this.abortController) {
+            this.abortController.abort();
+          }
+        },
+        handleEvent(assistantId, event) {
+          if (event.type === "chunk") {
+            this.updateAssistant(assistantId, (item) => {
+              item.content += event.content || "";
+            });
+          } else if (event.type === "progress") {
+            this.appendProgress(assistantId, event.message || "正在处理", event.stage);
+          } else if (event.type === "degradation") {
+            return;
+          } else if (event.type === "tool_start") {
+            return;
+          } else if (event.type === "tool_end") {
+            return;
+          } else if (event.type === "tool_error") {
+            return;
+          } else if (event.type === "error") {
+            this.appendError(assistantId, {
+              user_message: "生成过程中遇到临时问题，请稍后重试。",
+            });
+          } else if (event.type === "done") {
+            this.appendProgress(assistantId, "生成完成", "done");
+          }
+        },
+        exportCurrentSession() {
+          const content = this.buildSessionMarkdown({
+            threadId: this.threadId,
+            title: this.sessionTitle(),
+            updatedAt: new Date().toISOString(),
+            messages: this.messages,
+            debugLogs: this.debugLogs,
+          });
+          this.downloadText(`travel-session-${this.threadId || "current"}.md`, content);
+        },
+        exportAllSessions() {
+          const content = this.sessions
+            .map((session) => this.buildSessionMarkdown(session))
+            .join("\n\n---\n\n");
+          this.downloadText("travel-sessions-history.md", content);
+        },
+        buildSessionMarkdown(session) {
+          const lines = [
+            `# ${session.title || "旅游规划会话"}`,
+            "",
+            `- Thread ID: ${session.threadId || ""}`,
+            `- 导出时间: ${new Date().toLocaleString()}`,
+            "",
+          ];
+
+          for (const message of session.messages || []) {
+            lines.push(`## ${message.role === "user" ? "用户" : "助手"}`);
+            if (message.progress && message.progress.length) {
+              lines.push("", "### 生成过程");
+              for (const item of message.progress) {
+                lines.push(`- ${item.message}`);
+              }
+            }
+            if (message.errors && message.errors.length) {
+              lines.push("", "### 提示");
+              for (const item of message.errors) {
+                lines.push(`- ${item.userMessage}`);
+              }
+            }
+            lines.push("", message.content || "", "");
+          }
+
+          return lines.join("\n");
+        },
+        downloadText(filename, content) {
+          const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(url);
+        },
+        sessionTitle() {
+          const firstUser = this.messages.find((item) => item.role === "user");
+          if (!firstUser) {
+            return "新会话";
+          }
+          return firstUser.content.slice(0, 24) || "新会话";
+        },
+        formatTime(value) {
+          if (!value) {
+            return "";
+          }
+          return new Date(value).toLocaleString();
+        },
+        stringify(value) {
+          return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+        },
+        clone(value) {
+          return JSON.parse(JSON.stringify(value));
+        },
+        nextIdFrom(items) {
+          return Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+        },
+        nextProcessIdFromMessages() {
+          const ids = [];
+          for (const message of this.messages) {
+            for (const key of ["progress", "degradations", "errors"]) {
+              for (const item of message[key] || []) {
+                ids.push(Number(item.id) || 0);
+              }
+            }
+          }
+          return Math.max(0, ...ids) + 1;
+        },
+        scrollMessagesToBottom() {
+          const panel = this.$refs.messagePanel;
+          if (panel) {
+            panel.scrollTop = panel.scrollHeight;
+          }
+        },
+      },
+      watch: {
+        messages: {
+          deep: true,
+          handler() {
+            nextTick().then(() => this.scrollMessagesToBottom());
+          },
+        },
+      },
+    }).mount("#app");
+  </script>
+</body>
+</html>
